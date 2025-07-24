@@ -136,3 +136,67 @@ Yes, you can absolutely build them programmatically in a batch job:
     * **Serverless Functions:** For smaller, event-driven batch jobs (e.g., triggered by new data in a queue), serverless functions (like AWS Lambda, Google Cloud Functions, Azure Functions) could call image APIs and store results.
 
 By combining free stock photo APIs or AI image generation with scripting and containerization, you can effectively build a robust, programmatic pipeline for acquiring or creating images for your project.
+
+--- 
+
+> 🧍🏻 Can you read this blog post for a tech build challenge and help me consider which tech stack I want to use? https://www.pluralsight.com/resources/blog/cloud/cloud-portfolio-challenge-load-balancing-and-content-delivery-network 
+> 
+> I'm leaning towards hosting on DigitalOcean so I need a tech stack that works well with the Digital Ocean API/SDK and tooling. 
+> 
+> I have professional experience with Java, TypeScript, JavaScript, Go, PHP, Python
+>
+> I have personal experience with Ruby, C#, C++, C
+>
+> I have professional experience with Spring Boot, Angular, Vue, and React
+>
+> I have personal experience with Next.js, Blazor, React Native
+>
+> I love trying new technology. I want to start interviewing for a new client as my project comes to an end. Looking at my resume for additional context/skills, what do you recommend?
+
+I'll read the blog post to understand the challenge requirements and then provide recommendations based on your impressive background and Digital Ocean focus. Based on the challenge requirements and your background, here's my recommendation for a tech stack that leverages Digital Ocean well and positions you strongly for client interviews:
+
+## **Recommended Tech Stack**
+
+**Backend: Go + Gin Framework**
+- **Why Go**: It's perfect for cloud-native applications, has excellent Digital Ocean support, and shows you're current with modern backend trends
+- **Digital Ocean Integration**: Native DO API SDK, great for droplet management and CDN integration
+- **Interview Appeal**: Go is highly sought after for cloud/infrastructure roles, and your GCP/Kubernetes background translates perfectly
+
+**Frontend: Next.js + TypeScript**
+- **Why Next.js**: Builds on your React experience while showing modern full-stack capabilities
+- **Digital Ocean**: Works seamlessly with DO App Platform and static site hosting
+- **Career Growth**: Next.js is extremely popular for full-stack roles and demonstrates modern React patterns
+
+**Infrastructure: Terraform + Digital Ocean**
+- **Why Terraform**: You already know it professionally, and it's the gold standard
+- **Digital Ocean Provider**: Excellent Terraform support for all DO services
+- **Portfolio Value**: Shows Infrastructure as Code expertise that clients love
+
+## **Architecture Approach**
+
+1. **Load Balancer**: Digital Ocean Load Balancer (managed service)
+2. **VMs**: Digital Ocean Droplets running Go applications
+3. **CDN**: Digital Ocean Spaces CDN for image delivery
+4. **Database**: Digital Ocean Managed PostgreSQL (leverages your DB experience)
+5. **Deployment**: Digital Ocean App Platform for the Next.js frontend
+
+## **Why This Stack for Your Career Goals**
+
+**Differentiators:**
+- **Go expertise** is rare and highly valued (especially with your Java background)
+- **Next.js** shows modern full-stack capabilities beyond your Angular experience
+- **Multi-cloud perspective** (AWS mastery + DO implementation) is extremely valuable
+
+**Interview Talking Points:**
+- Serverless-first thinking (aligns with your AWS Community Builder focus)
+- Cost optimization strategies (your proven AWS cost reduction experience)
+- Modern DevOps practices with a new platform
+
+**Client Appeal:**
+- Go's performance characteristics are perfect for high-traffic applications
+- Next.js provides excellent SEO and performance out of the box
+- Digital Ocean's simplicity often appeals to clients wanting AWS alternatives
+
+This stack lets you showcase new technologies while leveraging your deep infrastructure expertise, making you stand out as someone who can adapt quickly to new platforms while bringing enterprise-scale experience.
+
+Would you like me to dive deeper into any specific aspect of this recommendation?
