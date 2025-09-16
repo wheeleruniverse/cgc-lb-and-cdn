@@ -111,10 +111,28 @@ func (bp *BaseProvider) SaveImageFromBase64(base64Data, filePrefix string) (*mod
 	filename := fmt.Sprintf("%s-%s.png", filePrefix, imageID)
 	fullPath := filepath.Join(bp.imageDir, filename)
 
+	// Handle empty base64 data
+	if base64Data == "" {
+		return nil, fmt.Errorf("empty base64 data received")
+	}
+
+	// Remove data URL prefix if present (e.g., "data:image/png;base64,")
+	if strings.Contains(base64Data, ",") {
+		parts := strings.Split(base64Data, ",")
+		if len(parts) > 1 {
+			base64Data = parts[1]
+		}
+	}
+
 	// Decode base64
 	imageData, err := base64.StdEncoding.DecodeString(base64Data)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode base64 image: %w", err)
+		return nil, fmt.Errorf("failed to decode base64 image (length: %d): %w", len(base64Data), err)
+	}
+
+	// Check if we got any data
+	if len(imageData) == 0 {
+		return nil, fmt.Errorf("decoded image data is empty")
 	}
 
 	// Write to file

@@ -34,9 +34,9 @@ func main() {
 	addr := fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)
 	log.Printf("Starting server on %s", addr)
 	log.Printf("Available endpoints:")
-	log.Printf("  POST /generate - Generate images")
-	log.Printf("  GET /status - Get provider status")
-	log.Printf("  GET /health - Health check")
+	log.Printf("  GET  /health - Health check")
+	log.Printf("  POST /api/v1/generate - Generate images")
+	log.Printf("  GET  /api/v1/status - Get provider status")
 
 	if err := router.Run(addr); err != nil {
 		log.Fatalf("Failed to start server: %v", err)

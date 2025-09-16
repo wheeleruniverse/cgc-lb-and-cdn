@@ -100,11 +100,21 @@ func (fp *FreepikProvider) Generate(ctx context.Context, req *models.ImageReques
 		return nil, err
 	}
 
+	// Debug: Check what we got
+	if len(freepikResp.Data) == 0 {
+		return nil, fmt.Errorf("no images returned from Freepik API")
+	}
+
 	// Process images
 	var images []models.GeneratedImage
 	for i, img := range freepikResp.Data {
 		if i >= count {
 			break // Limit to requested count
+		}
+
+		// Debug: Check if we have base64 data
+		if img.Image == "" {
+			return nil, fmt.Errorf("image %d has empty base64 data", i+1)
 		}
 
 		generatedImg, err := fp.SaveImageFromBase64(img.Image, "freepik")
