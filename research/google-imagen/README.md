@@ -9,7 +9,7 @@ You need a Google API key to use these examples:
 1. Get your API key from [Google AI Studio](https://aistudio.google.com/app/apikey)
 2. Set the environment variable:
    ```bash
-   export GOOGLE_API_KEY=your_api_key_here
+   export GOOGLE_API_KEY=xxx
    ```
 
 ## Scripts
@@ -45,7 +45,7 @@ Generates 4 images using the Imagen model and saves them as PNG files to the `im
 
 **Usage:**
 ```bash
-go run create_imagen_images.go
+go run generate_imagen.go
 ```
 
 **Example Output:**
