@@ -1,5 +1,15 @@
 # Craiyon
 
+## 🚨 **DANGER ZONE - API CURRENTLY BROKEN** 🚨
+
+> **⚠️ CRITICAL ISSUE**: As of September 2025, Craiyon has implemented Cloudflare protection that **blocks all automated requests**. The API returns a 403 error with a "Just a moment..." challenge page.
+>
+> **Status**: ❌ **COMPLETELY UNUSABLE**
+>
+> **Do not waste time debugging** - this is a server-side Cloudflare protection, not a code issue.
+
+---
+
 This directory contains a Go example for generating images using Craiyon's unofficial API.
 
 ## Prerequisites
@@ -59,11 +69,15 @@ Generated images are saved to the `images/` directory with UUID-based filenames 
 - ⚠️ Lower quality compared to premium services
 - ⚠️ No guaranteed uptime or support
 
-## Current Status
+## Alternative Solutions
 
-**⚠️ API Currently Unavailable**: As of September 2025, Craiyon has implemented Cloudflare protection that blocks automated requests. The API returns a 403 error with a "Just a moment..." challenge page.
+Since this API is broken, consider these working alternatives:
 
-**Potential Solutions:**
+1. **FreePik** - Official API with $5 free credit (`../freepik/`)
+2. **Google Imagen** - Premium quality with API key (`../google-imagen/`)
+3. **Leonardo AI** - High quality with free tier (`../leonardo-ai/`)
+
+**If you want to fix Craiyon:**
 - Use browser automation tools like Selenium or Playwright
 - Wait for Craiyon to provide an official API
-- Consider alternative free image generation services
+- Find alternative free image generation services

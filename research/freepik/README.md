@@ -19,25 +19,21 @@ You need a FreePik API key to use this example:
 ## Script
 
 ### Generate Images with FreePik
-Generates 4 images using FreePik's text-to-image API and saves them as PNG files to the `images/` directory. FreePik uses asynchronous processing with task-based polling.
+Generates 4 images using FreePik's Classic Fast API and saves them as PNG files to the `images/` directory. FreePik returns images synchronously as base64 data.
 
 **Usage:**
 ```bash
-go run generate_images.go
+go run generate_freepik.go
 ```
 
 **Example Output:**
 ```
-2025/09/16 15:13:48 Starting image generation with FreePik...
-2025/09/16 15:13:48 Started generation with task ID: abc123-def456-ghi789
-2025/09/16 15:13:48 Waiting for generation to complete...
-2025/09/16 15:13:53 Generation status: IN_PROGRESS
-2025/09/16 15:13:58 Generation status: COMPLETED
-2025/09/16 15:13:58 Generated 4 images successfully
-2025/09/16 15:13:58 Saved image 1 to: images/freepik-4d239706-cf2a-4045-8a50-637b7b99e965.png
-2025/09/16 15:13:58 Saved image 2 to: images/freepik-d75309bf-449c-457d-8522-c540eb9fd88f.png
-2025/09/16 15:13:58 Saved image 3 to: images/freepik-10595871-2eac-46c1-88ff-1c1563097cad.png
-2025/09/16 15:13:58 Saved image 4 to: images/freepik-14f2f045-a001-49a2-a649-b74b55e98fff.png
+2025/09/16 15:18:02 Starting image generation with FreePik...
+2025/09/16 15:18:05 Generated 4 images successfully
+2025/09/16 15:18:05 Saved image 1 to: images/freepik-4d239706-cf2a-4045-8a50-637b7b99e965.png
+2025/09/16 15:18:05 Saved image 2 to: images/freepik-d75309bf-449c-457d-8522-c540eb9fd88f.png
+2025/09/16 15:18:05 Saved image 3 to: images/freepik-10595871-2eac-46c1-88ff-1c1563097cad.png
+2025/09/16 15:18:05 Saved image 4 to: images/freepik-14f2f045-a001-49a2-a649-b74b55e98fff.png
 ```
 
 Generated images are saved to the `images/` directory with UUID-based filenames like `freepik-[uuid].png`.
@@ -46,10 +42,11 @@ Generated images are saved to the `images/` directory with UUID-based filenames 
 
 - **Official API** - Uses FreePik's documented and supported API endpoints
 - **Free tier available** - FreePik provides $5 USD credit to start
-- **Asynchronous processing** - Uses task-based polling similar to Leonardo AI
-- **Multiple models** - Supports Classic Fast, Imagen3, Flux, and other AI models
+- **Synchronous processing** - Returns images immediately as base64 data
+- **Classic Fast model** - Uses the most cost-effective model available
 - **High quality** - Professional-grade image generation
 - **Square aspect ratio** - Images generated at 1:1 ratio by default
+- **Base64 decoding** - Images returned as base64 strings and decoded locally
 - **Same prompt** - Uses "Robot holding a red skateboard" to match other examples
 
 ## API Features
@@ -70,7 +67,7 @@ Generated images are saved to the `images/` directory with UUID-based filenames 
 - ✅ Webhook support for real-time notifications
 
 **Current Implementation:**
-- Uses Classic Fast model for reliable generation
-- Downloads images via URL (no base64 decoding needed)
-- Polls every 5 seconds until completion
-- Handles both SUCCESS and COMPLETED status responses
+- Uses Classic Fast model (`/v1/ai/text-to-image`) for cost-effective generation
+- Receives images as base64 data (synchronous response)
+- No polling required - immediate results
+- Decodes base64 strings to PNG files automatically
