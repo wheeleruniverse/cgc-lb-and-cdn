@@ -11,6 +11,10 @@ You need a Google API key to use these examples:
    ```bash
    export GOOGLE_API_KEY=xxx
    ```
+3. Install dependencies:
+   ```bash
+   go mod tidy
+   ```
 
 ## Scripts
 

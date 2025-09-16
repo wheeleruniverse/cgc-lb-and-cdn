@@ -1,4 +1,4 @@
-module leonardo-ai
+module craiyon
 
 go 1.25.0
 

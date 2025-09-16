@@ -1,4 +1,4 @@
-module leonardo-ai
+module freepik
 
 go 1.25.0
 

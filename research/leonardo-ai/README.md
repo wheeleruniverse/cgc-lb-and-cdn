@@ -11,6 +11,10 @@ You need a Leonardo AI API key to use this example:
    ```bash
    export LEONARDO_API_KEY=xxx
    ```
+3. Install dependencies:
+   ```bash
+   go mod tidy
+   ```
 
 ## Script
 
