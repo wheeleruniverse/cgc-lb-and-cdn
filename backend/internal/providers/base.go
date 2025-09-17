@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -34,6 +35,10 @@ func NewBaseProvider(name string) *BaseProvider {
 			ErrorCount:  0,
 			QuotaHit:    false,
 			RateLimited: false,
+			QuotaInfo: &models.ProviderQuota{
+				Supported:   false,
+				LastUpdated: time.Now(),
+			},
 		},
 		httpClient: &http.Client{
 			Timeout: 60 * time.Second,
@@ -97,6 +102,18 @@ func (bp *BaseProvider) HandleError(err error) *models.ProviderError {
 	bp.status.Available = !(providerErr.IsQuotaHit || providerErr.IsRateLimit)
 
 	return providerErr
+}
+
+// RefreshQuota provides a default implementation (no quota support)
+func (bp *BaseProvider) RefreshQuota(ctx context.Context) error {
+	// Default implementation - no quota support
+	if bp.status.QuotaInfo == nil {
+		bp.status.QuotaInfo = &models.ProviderQuota{
+			Supported:   false,
+			LastUpdated: time.Now(),
+		}
+	}
+	return nil
 }
 
 // SaveImageFromBase64 saves a base64 encoded image to disk

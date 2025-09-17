@@ -32,7 +32,7 @@ type FreepikResponse struct {
 
 // FreepikImage represents a single image in Freepik response
 type FreepikImage struct {
-	Image string `json:"image"` // base64 encoded image
+	Base64 string `json:"base64"` // base64 encoded image
 }
 
 // NewFreepikProvider creates a new Freepik provider
@@ -65,6 +65,8 @@ func (fp *FreepikProvider) Generate(ctx context.Context, req *models.ImageReques
 		return nil, fmt.Errorf("freepik provider is not available: %s", fp.status.LastError)
 	}
 
+	fmt.Printf("[FREEPIK] Starting generation with prompt: %s, count: %d\n", req.Prompt, req.Count)
+
 	// Default to 4 images if not specified
 	count := req.Count
 	if count <= 0 {
@@ -75,7 +77,7 @@ func (fp *FreepikProvider) Generate(ctx context.Context, req *models.ImageReques
 	freepikReq := FreepikRequest{
 		Prompt:      req.Prompt,
 		NumImages:   count,
-		AspectRatio: "1:1", // Square aspect ratio by default
+		AspectRatio: "square_1_1", // Square aspect ratio by default (correct format)
 	}
 
 	jsonData, err := json.Marshal(freepikReq)
@@ -113,11 +115,11 @@ func (fp *FreepikProvider) Generate(ctx context.Context, req *models.ImageReques
 		}
 
 		// Debug: Check if we have base64 data
-		if img.Image == "" {
+		if img.Base64 == "" {
 			return nil, fmt.Errorf("image %d has empty base64 data", i+1)
 		}
 
-		generatedImg, err := fp.SaveImageFromBase64(img.Image, "freepik")
+		generatedImg, err := fp.SaveImageFromBase64(img.Base64, "freepik")
 		if err != nil {
 			return nil, fmt.Errorf("failed to save image %d: %w", i+1, err)
 		}
@@ -138,7 +140,7 @@ func (fp *FreepikProvider) Generate(ctx context.Context, req *models.ImageReques
 		Duration:  time.Since(startTime),
 		Metadata: map[string]string{
 			"model":        "classic-fast",
-			"aspect_ratio": "1:1",
+			"aspect_ratio": "square_1_1",
 			"api_version":  "v1",
 		},
 	}, nil

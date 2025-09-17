@@ -3,7 +3,9 @@ package agents
 import (
 	"context"
 	"fmt"
+	"log"
 	"math/rand"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,43 +38,62 @@ func (o *ImageOrchestrator) Execute(ctx context.Context, input interface{}) (int
 		return nil, fmt.Errorf("invalid input type: expected *models.ImageRequest")
 	}
 
+	log.Printf("[ADK] Starting image generation for request: %s", req.RequestID)
+
 	// Select initial provider
 	decision, err := o.SelectProvider(ctx, req)
 	if err != nil {
+		log.Printf("[ADK] Failed to select provider: %v", err)
 		return nil, fmt.Errorf("failed to select provider: %w", err)
 	}
 
+	log.Printf("[ADK] Selected provider: %s, fallback order: %v", decision.SelectedProvider, decision.FallbackOrder)
+
 	// Try providers in fallback order
-	for _, providerName := range decision.FallbackOrder {
+	for i, providerName := range decision.FallbackOrder {
+		log.Printf("[ADK] Trying provider %d/%d: %s", i+1, len(decision.FallbackOrder), providerName)
+
 		provider, exists := o.providers[providerName]
 		if !exists {
+			log.Printf("[ADK] Provider %s not found, skipping", providerName)
 			continue
 		}
 
 		if !provider.IsAvailable() {
+			log.Printf("[ADK] Provider %s not available, skipping", providerName)
 			continue
 		}
 
+		log.Printf("[ADK] Calling provider %s for generation", providerName)
 		response, err := provider.Generate(ctx, req)
 		if err != nil {
+			log.Printf("[ADK] Provider %s failed with error: %v", providerName, err)
+
 			// Handle provider error and check if we should continue
 			providerErr := provider.HandleError(err)
 			o.updateProviderStatus(providerName, providerErr)
 
+			log.Printf("[ADK] Provider %s error details - Quota: %t, Rate Limited: %t, Retryable: %t",
+				providerName, providerErr.IsQuotaHit, providerErr.IsRateLimit, providerErr.Retryable)
+
 			// If this was the last provider, return the error
 			if providerName == decision.FallbackOrder[len(decision.FallbackOrder)-1] {
+				log.Printf("[ADK] All providers exhausted, returning final error from %s", providerName)
 				return nil, fmt.Errorf("all providers failed, last error from %s: %w", providerName, err)
 			}
 
 			// Continue to next provider
+			log.Printf("[ADK] Falling back to next provider in list")
 			continue
 		}
 
 		// Success! Update provider status
+		log.Printf("[ADK] Provider %s succeeded, generated %d images", providerName, len(response.Images))
 		o.updateProviderSuccessStatus(providerName)
 		return response, nil
 	}
 
+	log.Printf("[ADK] No available providers found")
 	return nil, fmt.Errorf("no available providers")
 }
 
@@ -97,6 +118,8 @@ func (o *ImageOrchestrator) SelectProvider(ctx context.Context, req *models.Imag
 	o.random.Shuffle(len(availableProviders), func(i, j int) {
 		availableProviders[i], availableProviders[j] = availableProviders[j], availableProviders[i]
 	})
+
+	log.Printf("[INFO] Selecting providers: %s", strings.Join(availableProviders, ", "))
 
 	return &models.AgentDecision{
 		SelectedProvider: availableProviders[0],
@@ -193,6 +216,15 @@ func (o *ImageOrchestrator) GetProviderStatus() map[string]*models.ProviderStatu
 	}
 
 	return statusCopy
+}
+
+// GetProvider returns a specific provider by name
+func (o *ImageOrchestrator) GetProvider(name string) (ImageProvider, bool) {
+	o.mutex.RLock()
+	defer o.mutex.RUnlock()
+
+	provider, exists := o.providers[name]
+	return provider, exists
 }
 
 // GetName returns the agent's name

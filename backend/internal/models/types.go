@@ -51,13 +51,27 @@ func (e *ProviderError) Error() string {
 
 // ProviderStatus represents the current status of a provider
 type ProviderStatus struct {
-	Name        string    `json:"name"`
-	Available   bool      `json:"available"`
-	LastError   string    `json:"last_error,omitempty"`
-	LastSuccess time.Time `json:"last_success"`
-	ErrorCount  int       `json:"error_count"`
-	QuotaHit    bool      `json:"quota_hit"`
-	RateLimited bool      `json:"rate_limited"`
+	Name        string         `json:"name"`
+	Available   bool           `json:"available"`
+	LastError   string         `json:"last_error,omitempty"`
+	LastSuccess time.Time      `json:"last_success"`
+	ErrorCount  int            `json:"error_count"`
+	QuotaHit    bool           `json:"quota_hit"`
+	RateLimited bool           `json:"rate_limited"`
+	QuotaInfo   *ProviderQuota `json:"quota_info,omitempty"`
+}
+
+// ProviderQuota represents quota information for a provider
+type ProviderQuota struct {
+	Remaining          int       `json:"remaining,omitempty"`
+	Total              int       `json:"total,omitempty"`
+	RenewalDate        time.Time `json:"renewal_date,omitempty"`
+	APITokens          int       `json:"api_tokens,omitempty"`
+	SubscriptionTokens int       `json:"subscription_tokens,omitempty"`
+	PaidTokens         int       `json:"paid_tokens,omitempty"`
+	ConcurrencySlots   int       `json:"concurrency_slots,omitempty"`
+	LastUpdated        time.Time `json:"last_updated"`
+	Supported          bool      `json:"supported"`
 }
 
 // AgentDecision represents a decision made by the orchestrator agent

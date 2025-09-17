@@ -21,6 +21,9 @@ type ImageProvider interface {
 
 	// HandleError processes an error and updates provider status
 	HandleError(err error) *models.ProviderError
+
+	// RefreshQuota updates quota information from the provider's API
+	RefreshQuota(ctx context.Context) error
 }
 
 // Agent represents a generic agent in the ADK framework
@@ -50,6 +53,9 @@ type OrchestratorAgent interface {
 
 	// GetProviderStatus returns status of all registered providers
 	GetProviderStatus() map[string]*models.ProviderStatus
+
+	// GetProvider returns a specific provider by name
+	GetProvider(name string) (ImageProvider, bool)
 }
 
 // ProviderAgent wraps an image provider with agent capabilities

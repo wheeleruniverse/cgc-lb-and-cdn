@@ -88,6 +88,8 @@ func (lp *LeonardoAIProvider) Generate(ctx context.Context, req *models.ImageReq
 		return nil, fmt.Errorf("leonardo ai provider is not available: %s", lp.status.LastError)
 	}
 
+	fmt.Printf("[LEONARDO-AI] Starting generation with prompt: %s, count: %d\n", req.Prompt, req.Count)
+
 	// Default to 4 images if not specified
 	count := req.Count
 	if count <= 0 {
@@ -219,4 +221,91 @@ func (lp *LeonardoAIProvider) pollForCompletion(ctx context.Context, generationI
 	}
 
 	return nil, fmt.Errorf("generation timed out after %d attempts", maxAttempts)
+}
+
+// LeonardoUserResponse represents the response from Leonardo AI /me endpoint
+type LeonardoUserResponse struct {
+	UserDetails []LeonardoUserDetail `json:"user_details"`
+}
+
+// LeonardoUserDetail represents user details including quota information
+type LeonardoUserDetail struct {
+	User                    LeonardoUser `json:"user"`
+	TokenRenewalDate        *string      `json:"tokenRenewalDate"`
+	PaidTokens              int          `json:"paidTokens"`
+	SubscriptionTokens      int          `json:"subscriptionTokens"`
+	SubscriptionGptTokens   int          `json:"subscriptionGptTokens"`
+	SubscriptionModelTokens int          `json:"subscriptionModelTokens"`
+	APIConcurrencySlots     int          `json:"apiConcurrencySlots"`
+	APIPaidTokens           *int         `json:"apiPaidTokens"`
+	APISubscriptionTokens   int          `json:"apiSubscriptionTokens"`
+	APIPlanTokenRenewalDate string       `json:"apiPlanTokenRenewalDate"`
+}
+
+// LeonardoUser represents basic user information
+type LeonardoUser struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+}
+
+// RefreshQuota updates quota information from Leonardo AI's /me endpoint
+func (lp *LeonardoAIProvider) RefreshQuota(ctx context.Context) error {
+	if !lp.IsAvailable() {
+		return fmt.Errorf("provider not available")
+	}
+
+	fmt.Printf("[LEONARDO-AI] Refreshing quota information\n")
+
+	// Make API request to /me endpoint
+	headers := map[string]string{
+		"Authorization": "Bearer " + lp.apiKey,
+	}
+
+	resp, err := lp.MakeHTTPRequest("GET", lp.baseURL+"/me", headers, nil)
+	if err != nil {
+		return fmt.Errorf("failed to fetch user info: %w", err)
+	}
+
+	var userResp LeonardoUserResponse
+	if err := lp.ParseJSONResponse(resp, &userResp); err != nil {
+		return fmt.Errorf("failed to parse user response: %w", err)
+	}
+
+	if len(userResp.UserDetails) == 0 {
+		return fmt.Errorf("no user details in response")
+	}
+
+	userDetail := userResp.UserDetails[0]
+
+	// Parse renewal date
+	var renewalDate time.Time
+	if userDetail.APIPlanTokenRenewalDate != "" {
+		if parsed, err := time.Parse(time.RFC3339, userDetail.APIPlanTokenRenewalDate); err == nil {
+			renewalDate = parsed
+		}
+	}
+
+	// Calculate total available tokens
+	totalTokens := userDetail.APISubscriptionTokens
+	if userDetail.APIPaidTokens != nil {
+		totalTokens += *userDetail.APIPaidTokens
+	}
+
+	// Update quota information
+	lp.status.QuotaInfo = &models.ProviderQuota{
+		APITokens:          userDetail.APISubscriptionTokens,
+		PaidTokens:         userDetail.PaidTokens,
+		SubscriptionTokens: userDetail.SubscriptionTokens,
+		ConcurrencySlots:   userDetail.APIConcurrencySlots,
+		Total:              totalTokens,
+		Remaining:          userDetail.APISubscriptionTokens, // API tokens are the main quota
+		RenewalDate:        renewalDate,
+		LastUpdated:        time.Now(),
+		Supported:          true,
+	}
+
+	fmt.Printf("[LEONARDO-AI] Quota updated - API Tokens: %d, Renewal: %s\n",
+		userDetail.APISubscriptionTokens, renewalDate.Format("2006-01-02"))
+
+	return nil
 }

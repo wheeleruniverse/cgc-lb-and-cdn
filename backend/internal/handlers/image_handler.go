@@ -1,12 +1,15 @@
 package handlers
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"time"
 
 	"cgc-image-service/internal/agents"
 	"cgc-image-service/internal/models"
 	"cgc-image-service/pkg/utils"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -48,9 +51,8 @@ func (h *ImageHandler) GenerateImage(c *gin.Context) {
 	// Set defaults
 	if req.Count <= 0 {
 		req.Count = 4
-	}
-	if req.Count > 10 {
-		req.Count = 10 // Limit to prevent abuse
+	} else if req.Count > 4 {
+		req.Count = 4 // Limit to prevent abuse
 	}
 
 	// Execute through orchestrator
@@ -80,11 +82,40 @@ func (h *ImageHandler) GenerateImage(c *gin.Context) {
 
 // GetProviderStatus handles GET /status requests
 func (h *ImageHandler) GetProviderStatus(c *gin.Context) {
+	// Check if quota refresh is requested
+	refreshQuota := c.Query("refresh_quota") == "true"
+
+	if refreshQuota {
+		h.refreshAllProviderQuotas(c.Request.Context())
+	}
+
 	status := h.orchestrator.GetProviderStatus()
 
 	utils.RespondWithSuccess(c, status, "Provider status retrieved", map[string]string{
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"timestamp":       time.Now().UTC().Format(time.RFC3339),
+		"quota_refreshed": fmt.Sprintf("%t", refreshQuota),
 	})
+}
+
+// refreshAllProviderQuotas refreshes quota information for all providers
+func (h *ImageHandler) refreshAllProviderQuotas(ctx context.Context) {
+	providerStatus := h.orchestrator.GetProviderStatus()
+
+	for providerName := range providerStatus {
+		fmt.Printf("[STATUS] Refreshing quota for provider: %s\n", providerName)
+
+		provider, exists := h.orchestrator.GetProvider(providerName)
+		if !exists {
+			fmt.Printf("[STATUS] Provider %s not found\n", providerName)
+			continue
+		}
+
+		if err := provider.RefreshQuota(ctx); err != nil {
+			fmt.Printf("[STATUS] Failed to refresh quota for %s: %v\n", providerName, err)
+		} else {
+			fmt.Printf("[STATUS] Successfully refreshed quota for %s\n", providerName)
+		}
+	}
 }
 
 // HealthCheck handles GET /health requests
