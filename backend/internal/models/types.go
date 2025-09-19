@@ -82,3 +82,37 @@ type AgentDecision struct {
 	Confidence       float64           `json:"confidence"`
 	Metadata         map[string]string `json:"metadata,omitempty"`
 }
+
+// ImageInfo represents metadata about an existing image
+type ImageInfo struct {
+	ID       string `json:"id"`
+	Filename string `json:"filename"`
+	Path     string `json:"path"`
+	URL      string `json:"url"`
+	Provider string `json:"provider"`
+	Size     int64  `json:"size"`
+}
+
+// ImagePairResponse represents a pair of images for comparison
+type ImagePairResponse struct {
+	PairID string    `json:"pair_id"`
+	Left   ImageInfo `json:"left"`
+	Right  ImageInfo `json:"right"`
+}
+
+// ComparisonRatingRequest represents a rating submission for image comparison
+type ComparisonRatingRequest struct {
+	PairID  string `json:"pair_id" binding:"required"`
+	Winner  string `json:"winner" binding:"required"` // "left" or "right"
+	LeftID  string `json:"left_id" binding:"required"`
+	RightID string `json:"right_id" binding:"required"`
+}
+
+// ComparisonRatingResponse represents the response to a rating submission
+type ComparisonRatingResponse struct {
+	Success   bool   `json:"success"`
+	PairID    string `json:"pair_id"`
+	Winner    string `json:"winner"`
+	Message   string `json:"message"`
+	Timestamp string `json:"timestamp"`
+}

@@ -37,6 +37,9 @@ func main() {
 	log.Printf("  GET  /health - Health check")
 	log.Printf("  POST /api/v1/generate - Generate images")
 	log.Printf("  GET  /api/v1/status - Get provider status")
+	log.Printf("  GET  /api/v1/images/pair - Get random image pair")
+	log.Printf("  POST /api/v1/images/rate - Submit comparison rating")
+	log.Printf("  GET  /images/* - Serve static images")
 
 	if err := router.Run(addr); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
@@ -92,11 +95,16 @@ func setupRouter(imageHandler *handlers.ImageHandler) *gin.Engine {
 	// Health check endpoint
 	router.GET("/health", imageHandler.HealthCheck)
 
+	// Serve static images (must come before API routes to avoid conflicts)
+	router.Static("/images", "./images")
+
 	// API routes
 	api := router.Group("/api/v1")
 	{
 		api.POST("/generate", imageHandler.GenerateImage)
 		api.GET("/status", imageHandler.GetProviderStatus)
+		api.GET("/images/pair", imageHandler.GetImagePair)
+		api.POST("/images/rate", imageHandler.SubmitRating)
 	}
 
 	return router
