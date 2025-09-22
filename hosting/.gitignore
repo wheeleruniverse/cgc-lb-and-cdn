@@ -1,0 +1,30 @@
+# Pulumi
+.pulumi/
+Pulumi.*.yaml
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+vendor/
+
+# Environment variables
+.env
+.env.local
+
+# Digital Ocean tokens and sensitive config
+.do_token
+do_token.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
