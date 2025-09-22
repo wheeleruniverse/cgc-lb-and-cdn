@@ -25,6 +25,14 @@ The infrastructure includes:
 
 ## Setup
 
+### Option 1: GitHub Actions Deployment (Recommended)
+
+1. **Set up GitHub Secrets**: Follow the guide in [`docs/github-secrets-setup.md`](docs/github-secrets-setup.md)
+2. **Push to main branch**: Infrastructure and applications deploy automatically
+3. **Monitor deployment**: Check GitHub Actions for progress and outputs
+
+### Option 2: Local Development
+
 1. **Configure Digital Ocean Token**:
    ```bash
    export DIGITALOCEAN_TOKEN="your_digital_ocean_api_token"

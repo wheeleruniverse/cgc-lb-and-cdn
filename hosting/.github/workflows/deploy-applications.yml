@@ -1,0 +1,187 @@
+name: Deploy Applications
+
+on:
+  workflow_run:
+    workflows: ["Deploy Infrastructure"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy applications'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - staging
+        - prod
+
+env:
+  PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+  DIGITALOCEAN_TOKEN: ${{ secrets.DO_API_KEY }}
+
+jobs:
+  deploy-backend:
+    name: Deploy Backend Application
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Pulumi CLI
+      uses: pulumi/actions@v4
+
+    - name: Get infrastructure outputs
+      working-directory: hosting
+      run: |
+        pulumi stack select dev
+        echo "BACKEND_IP=$(pulumi stack output backendDropletIp)" >> $GITHUB_ENV
+        echo "FRONTEND_IP=$(pulumi stack output frontendDropletIp)" >> $GITHUB_ENV
+        echo "SPACES_BUCKET=$(pulumi stack output spacesBucketName)" >> $GITHUB_ENV
+        echo "SPACES_ENDPOINT=$(pulumi stack output spacesBucketEndpoint)" >> $GITHUB_ENV
+
+    - name: Setup SSH key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ env.BACKEND_IP }} >> ~/.ssh/known_hosts
+
+    - name: Deploy backend application
+      run: |
+        # Create deployment script
+        cat > deploy-backend.sh << 'EOF'
+        #!/bin/bash
+        set -e
+
+        # Clone or update repository
+        if [ -d "/opt/cgc-backend/.git" ]; then
+          cd /opt/cgc-backend
+          git pull origin main
+        else
+          rm -rf /opt/cgc-backend/*
+          cd /opt/cgc-backend
+          git clone https://github.com/${{ github.repository }}.git .
+        fi
+
+        # Build the application
+        cd /opt/cgc-backend/backend
+        /usr/local/go/bin/go mod tidy
+        /usr/local/go/bin/go build -o /opt/cgc-backend/server cmd/server/main.go
+
+        # Create environment file
+        cat > /opt/cgc-backend/.env << ENVEOF
+        PORT=8080
+        HOST=0.0.0.0
+        GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
+        LEONARDO_API_KEY=${{ secrets.LEONARDO_API_KEY }}
+        FREEPIK_API_KEY=${{ secrets.FREEPIK_API_KEY }}
+        DO_API_KEY=${{ secrets.DO_API_KEY }}
+        SPACES_BUCKET=${{ env.SPACES_BUCKET }}
+        SPACES_ENDPOINT=${{ env.SPACES_ENDPOINT }}
+        ENVEOF
+
+        # Update systemd service to load environment
+        cat > /etc/systemd/system/cgc-backend.service << SERVICEEOF
+        [Unit]
+        Description=CGC Backend Service
+        After=network.target
+
+        [Service]
+        Type=simple
+        User=root
+        WorkingDirectory=/opt/cgc-backend
+        Environment=PATH=/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        EnvironmentFile=/opt/cgc-backend/.env
+        ExecStart=/opt/cgc-backend/server
+        Restart=always
+        RestartSec=10
+
+        [Install]
+        WantedBy=multi-user.target
+        SERVICEEOF
+
+        # Restart service
+        systemctl daemon-reload
+        systemctl restart cgc-backend.service
+        systemctl status cgc-backend.service
+        EOF
+
+        # Execute deployment script on backend droplet
+        ssh -i ~/.ssh/id_rsa root@${{ env.BACKEND_IP }} 'bash -s' < deploy-backend.sh
+
+  deploy-frontend:
+    name: Deploy Frontend Application
+    runs-on: ubuntu-latest
+    needs: deploy-backend
+    if: success()
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Pulumi CLI
+      uses: pulumi/actions@v4
+
+    - name: Get infrastructure outputs
+      working-directory: hosting
+      run: |
+        pulumi stack select dev
+        echo "BACKEND_IP=$(pulumi stack output backendDropletIp)" >> $GITHUB_ENV
+        echo "FRONTEND_IP=$(pulumi stack output frontendDropletIp)" >> $GITHUB_ENV
+        echo "LB_IP=$(pulumi stack output loadBalancerIp)" >> $GITHUB_ENV
+
+    - name: Setup SSH key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ env.FRONTEND_IP }} >> ~/.ssh/known_hosts
+
+    - name: Deploy frontend application
+      run: |
+        # Create deployment script
+        cat > deploy-frontend.sh << 'EOF'
+        #!/bin/bash
+        set -e
+
+        # Clone or update repository
+        if [ -d "/opt/cgc-frontend/.git" ]; then
+          cd /opt/cgc-frontend
+          git pull origin main
+        else
+          rm -rf /opt/cgc-frontend/*
+          cd /opt/cgc-frontend
+          git clone https://github.com/${{ github.repository }}.git .
+        fi
+
+        # Build the application
+        cd /opt/cgc-frontend/frontend
+        npm install
+        npm run build
+
+        # Update nginx config with actual backend IP
+        sed -i 's/BACKEND_IP/${{ env.BACKEND_IP }}/g' /etc/nginx/sites-available/cgc-frontend
+        systemctl reload nginx
+
+        # Start with PM2
+        pm2 delete cgc-frontend || true
+        pm2 start ecosystem.config.js
+        pm2 save
+        EOF
+
+        # Execute deployment script on frontend droplet
+        ssh -i ~/.ssh/id_rsa root@${{ env.FRONTEND_IP }} 'bash -s' < deploy-frontend.sh
+
+    - name: Deployment summary
+      run: |
+        echo "## Deployment Complete! 🚀" >> $GITHUB_STEP_SUMMARY
+        echo "### Access URLs" >> $GITHUB_STEP_SUMMARY
+        echo "- **Load Balancer**: http://${{ env.LB_IP }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Backend API**: http://${{ env.BACKEND_IP }}:8080" >> $GITHUB_STEP_SUMMARY
+        echo "- **Frontend**: http://${{ env.FRONTEND_IP }}" >> $GITHUB_STEP_SUMMARY
+        echo "### Health Checks" >> $GITHUB_STEP_SUMMARY
+        echo "- Backend Health: http://${{ env.BACKEND_IP }}:8080/health" >> $GITHUB_STEP_SUMMARY
