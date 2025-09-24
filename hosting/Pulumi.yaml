@@ -3,9 +3,6 @@ runtime: go
 description: Digital Ocean infrastructure for CGC Load Balancing and CDN project
 
 config:
-  digitalocean:region:
-    description: Digital Ocean region
-    value: nyc3
   cgc-hosting:domain:
     description: Domain name for the application
     value: ""
