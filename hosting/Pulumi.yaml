@@ -6,9 +6,6 @@ config:
   digitalocean:region:
     description: Digital Ocean region
     default: nyc3
-  cgc-hosting:ssh_key_name:
-    description: SSH key name for droplets
-    default: default
   cgc-hosting:domain:
     description: Domain name for the application
     default: ""

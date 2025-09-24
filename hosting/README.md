@@ -12,6 +12,7 @@ The infrastructure includes:
   - Frontend droplet (Next.js application on port 3000)
 - **Spaces Storage**: Object storage for generated images and content
 - **Spaces CDN**: Content Delivery Network for serving static files
+- **Valkey Database**: Managed in-memory database for caching user votes and session data
 - **VPC**: Private network for secure communication between resources
 - **Firewall**: Security rules for controlling access
 
@@ -28,14 +29,14 @@ The infrastructure includes:
 ### Option 1: GitHub Actions Deployment (Recommended)
 
 1. **Set up GitHub Secrets**: Follow the guide in [`docs/github-secrets-setup.md`](docs/github-secrets-setup.md)
-2. **Push to main branch**: Infrastructure and applications deploy automatically
+2. **Manual deployment**: Trigger deployment via GitHub Actions workflow_dispatch
 3. **Monitor deployment**: Check GitHub Actions for progress and outputs
 
 ### Option 2: Local Development
 
-1. **Configure Digital Ocean Token**:
+1. **Configure Digital Ocean Access Token**:
    ```bash
-   export DIGITALOCEAN_TOKEN="your_digital_ocean_api_token"
+   export DIGITALOCEAN_TOKEN="your_digital_ocean_access_token"
    ```
 
 2. **Initialize Pulumi Stack**:
@@ -48,9 +49,6 @@ The infrastructure includes:
    ```bash
    # Set the Digital Ocean region
    pulumi config set digitalocean:region nyc3
-
-   # Set your SSH key name (as it appears in Digital Ocean)
-   pulumi config set cgc-hosting:ssh_key_name "your-ssh-key-name"
 
    # Optional: Set a custom domain for CDN
    pulumi config set cgc-hosting:domain "your-domain.com"
@@ -74,58 +72,20 @@ The infrastructure includes:
 4. **Note the outputs**:
    - Load Balancer IP address
    - Backend and Frontend droplet IPs
-   - Spaces bucket information
+   - DO Spaces bucket information
    - CDN endpoint
+   - Valkey database connection details
 
 ## Post-Deployment Steps
 
-### 1. Deploy Backend Application
+### Application Deployment
 
-SSH into the backend droplet:
-```bash
-ssh root@<backend-droplet-ip>
-```
+With the simplified architecture, applications are deployed through infrastructure automation. The droplets are configured in private subnets and accessed only through the load balancer.
 
-Deploy your Go application:
-```bash
-# Clone your repository
-cd /opt/cgc-backend
-git clone <your-repo-url> .
-
-# Build the application
-/usr/local/go/bin/go build -o server cmd/server/main.go
-
-# Start the service
-systemctl start cgc-backend.service
-systemctl status cgc-backend.service
-```
-
-### 2. Deploy Frontend Application
-
-SSH into the frontend droplet:
-```bash
-ssh root@<frontend-droplet-ip>
-```
-
-Deploy your Next.js application:
-```bash
-# Clone your repository
-cd /opt/cgc-frontend
-git clone <your-repo-url> .
-
-# Update nginx config with backend IP
-sed -i 's/BACKEND_IP/<backend-droplet-ip>/g' /etc/nginx/sites-available/cgc-frontend
-systemctl reload nginx
-
-# Install dependencies and build
-npm install
-npm run build
-
-# Start with PM2
-pm2 start ecosystem.config.js
-pm2 save
-pm2 startup
-```
+Consider using:
+- **DigitalOcean App Platform** for containerized applications
+- **Infrastructure-as-Code** deployment through Pulumi
+- **Container registries** for application images
 
 ### 3. Configure DNS (Optional)
 
@@ -138,7 +98,6 @@ If you have a custom domain:
 | Config Key | Description | Default |
 |------------|-------------|---------|
 | `digitalocean:region` | Digital Ocean region | `nyc3` |
-| `cgc-hosting:ssh_key_name` | SSH key name for droplets | `default` |
 | `cgc-hosting:domain` | Custom domain for CDN | `""` |
 
 ## Resource Details
@@ -155,36 +114,31 @@ If you have a custom domain:
 - **Network**: Private VPC with public IP
 - **Storage**: 25GB SSD
 
-### Spaces Storage
+### DO Spaces Storage
 - **Name**: cgc-generated-content
 - **Region**: nyc3
 - **ACL**: public-read
 - **CDN**: Built-in CDN enabled
 
+### Valkey Database
+- **Engine**: Valkey 8 (Redis-compatible)
+- **Size**: db-s-1vcpu-1gb (1 vCPU, 1GB RAM)
+- **Node Count**: 1 (single node for cost efficiency)
+- **Network**: Private VPC access only
+- **Use Case**: User vote caching, session storage, fast data access
+
 ### Security
 - **Firewall**: Restricts access to necessary ports only
 - **VPC**: Private communication between droplets
-- **SSH**: Key-based authentication only
+- **Private Subnets**: Droplets only accessible via load balancer
 
 ## Monitoring and Maintenance
 
 1. **Check Service Status**:
-   ```bash
-   # Backend
-   ssh root@<backend-ip> "systemctl status cgc-backend.service"
-
-   # Frontend
-   ssh root@<frontend-ip> "pm2 status"
-   ```
+   Monitor through DigitalOcean dashboard and load balancer health checks
 
 2. **View Logs**:
-   ```bash
-   # Backend logs
-   ssh root@<backend-ip> "journalctl -u cgc-backend.service -f"
-
-   # Frontend logs
-   ssh root@<frontend-ip> "pm2 logs cgc-frontend"
-   ```
+   Access logs through DigitalOcean monitoring or centralized logging solution
 
 3. **Load Balancer Health**:
    Check the Digital Ocean dashboard for droplet health status.
@@ -203,7 +157,8 @@ Monthly costs (approximate):
 - Load Balancer: $12/month
 - 2 Droplets (s-1vcpu-1gb): $12/month ($6 each)
 - Spaces Storage (250GB): $5/month
-- **Total**: ~$29/month
+- Valkey Database (db-s-1vcpu-1gb): $15/month
+- **Total**: ~$44/month
 
 ## Cleanup
 
@@ -216,9 +171,9 @@ pulumi destroy
 
 ### Common Issues
 
-1. **SSH Key Not Found**: Ensure your SSH key is uploaded to Digital Ocean with the correct name
-2. **API Token**: Verify your Digital Ocean token has the correct permissions
-3. **Region**: Some features may not be available in all regions
+1. **Access Token**: Verify your Digital Ocean access token has the correct permissions
+2. **Region**: Some features may not be available in all regions
+3. **Spaces**: Ensure DO Spaces service is available in your selected region
 
 ### Getting Help
 
@@ -228,8 +183,8 @@ pulumi destroy
 
 ## Security Considerations
 
-1. **API Tokens**: Never commit API tokens to version control
-2. **SSH Keys**: Use strong SSH keys and consider key rotation
+1. **Access Tokens**: Never commit access tokens to version control
+2. **Private Subnets**: Droplets are in private subnets, accessible only via load balancer
 3. **Firewall**: Review and adjust firewall rules as needed
 4. **SSL**: Consider adding SSL certificates for production use
 5. **Updates**: Regularly update droplet software and security patches

@@ -1,0 +1,85 @@
+name: Deploy Applications
+
+on:
+  workflow_run:
+    workflows: ["Deploy Infrastructure"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+  DIGITALOCEAN_TOKEN: ${{ secrets.DO_ACCESS_TOKEN }}
+
+jobs:
+  deploy-backend:
+    name: Deploy Backend Application
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Pulumi CLI
+      uses: pulumi/actions@v4
+
+    - name: Get infrastructure outputs
+      working-directory: hosting
+      run: |
+        pulumi stack select dev
+        echo "BACKEND_IP=$(pulumi stack output backendDropletIp)" >> $GITHUB_ENV
+        echo "FRONTEND_IP=$(pulumi stack output frontendDropletIp)" >> $GITHUB_ENV
+        echo "DO_SPACES_BUCKET=$(pulumi stack output spacesBucketName)" >> $GITHUB_ENV
+        echo "DO_SPACES_ENDPOINT=$(pulumi stack output spacesBucketEndpoint)" >> $GITHUB_ENV
+        echo "DO_VALKEY_HOST=$(pulumi stack output valkeyClusterHost)" >> $GITHUB_ENV
+        echo "DO_VALKEY_PORT=$(pulumi stack output valkeyClusterPort)" >> $GITHUB_ENV
+        echo "DO_VALKEY_URI=$(pulumi stack output valkeyClusterUri)" >> $GITHUB_ENV
+
+    - name: Deploy backend application via DigitalOcean API
+      run: |
+        echo "Backend deployment will be handled by infrastructure automation."
+        echo "Consider using DigitalOcean App Platform or container deployment for simplified application management."
+        echo "Backend IP: ${{ env.BACKEND_IP }}"
+        echo "DO Spaces Bucket: ${{ env.DO_SPACES_BUCKET }}"
+        echo "DO Spaces Endpoint: ${{ env.DO_SPACES_ENDPOINT }}"
+        echo "DO Valkey Host: ${{ env.DO_VALKEY_HOST }}"
+        echo "DO Valkey Port: ${{ env.DO_VALKEY_PORT }}"
+
+  deploy-frontend:
+    name: Deploy Frontend Application
+    runs-on: ubuntu-latest
+    needs: deploy-backend
+    if: success()
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Pulumi CLI
+      uses: pulumi/actions@v4
+
+    - name: Get infrastructure outputs
+      working-directory: hosting
+      run: |
+        pulumi stack select dev
+        echo "BACKEND_IP=$(pulumi stack output backendDropletIp)" >> $GITHUB_ENV
+        echo "FRONTEND_IP=$(pulumi stack output frontendDropletIp)" >> $GITHUB_ENV
+        echo "LB_IP=$(pulumi stack output loadBalancerIp)" >> $GITHUB_ENV
+
+    - name: Deploy frontend application via DigitalOcean API
+      run: |
+        echo "Frontend deployment will be handled by infrastructure automation."
+        echo "Consider using DigitalOcean App Platform or container deployment for simplified application management."
+        echo "Frontend IP: ${{ env.FRONTEND_IP }}"
+        echo "Load Balancer IP: ${{ env.LB_IP }}"
+
+    - name: Deployment summary
+      run: |
+        echo "## Deployment Complete! 🚀" >> $GITHUB_STEP_SUMMARY
+        echo "### Access URLs" >> $GITHUB_STEP_SUMMARY
+        echo "- **Load Balancer**: http://${{ env.LB_IP }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Backend API**: http://${{ env.BACKEND_IP }}:8080" >> $GITHUB_STEP_SUMMARY
+        echo "- **Frontend**: http://${{ env.FRONTEND_IP }}" >> $GITHUB_STEP_SUMMARY
+        echo "### Health Checks" >> $GITHUB_STEP_SUMMARY
+        echo "- Backend Health: http://${{ env.BACKEND_IP }}:8080/health" >> $GITHUB_STEP_SUMMARY

@@ -12,19 +12,7 @@ func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
 		// Load configuration
 		cfg := config.New(ctx, "")
-		sshKeyName := cfg.Get("ssh_key_name")
-		if sshKeyName == "" {
-			sshKeyName = "default"
-		}
 		_ = cfg.Get("domain") // Domain configuration for future SSL setup
-
-		// Get SSH key
-		sshKey, err := digitalocean.LookupSshKey(ctx, &digitalocean.LookupSshKeyArgs{
-			Name: sshKeyName,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to get SSH key: %v", err)
-		}
 
 		// Create Spaces bucket for content storage
 		spacesBucket, err := digitalocean.NewSpacesBucket(ctx, "cgc-content-storage", &digitalocean.SpacesBucketArgs{
@@ -55,6 +43,25 @@ func main() {
 			return err
 		}
 
+		// Create Valkey managed database cluster for caching user votes
+		valkeyCluster, err := digitalocean.NewDatabaseCluster(ctx, "cgc-valkey-cluster", &digitalocean.DatabaseClusterArgs{
+			Name:               pulumi.String("cgc-valkey-cluster"),
+			Engine:             pulumi.String("valkey"),
+			Version:            pulumi.String("8"),
+			Size:               pulumi.String("db-s-1vcpu-1gb"), // Small cluster for development
+			Region:             pulumi.String("nyc3"),
+			NodeCount:          pulumi.Int(1), // Single node for cost efficiency
+			PrivateNetworkUuid: vpc.ID(),
+			Tags: pulumi.StringArray{
+				pulumi.String("cgc"),
+				pulumi.String("valkey"),
+				pulumi.String("cache"),
+			},
+		})
+		if err != nil {
+			return err
+		}
+
 		// Backend droplet for Go API server
 		backendDroplet, err := digitalocean.NewDroplet(ctx, "cgc-backend", &digitalocean.DropletArgs{
 			Name:     pulumi.String("cgc-backend"),
@@ -62,7 +69,6 @@ func main() {
 			Size:     pulumi.String("s-1vcpu-1gb"),
 			Region:   pulumi.String("nyc3"),
 			VpcUuid:  vpc.ID(),
-			SshKeys:  pulumi.StringArray{pulumi.String(sshKey.Fingerprint)},
 			UserData: pulumi.String(getBackendUserData()),
 			Tags:     pulumi.StringArray{pulumi.String("backend"), pulumi.String("cgc")},
 		})
@@ -77,7 +83,6 @@ func main() {
 			Size:     pulumi.String("s-1vcpu-1gb"),
 			Region:   pulumi.String("nyc3"),
 			VpcUuid:  vpc.ID(),
-			SshKeys:  pulumi.StringArray{pulumi.String(sshKey.Fingerprint)},
 			UserData: pulumi.String(getFrontendUserData()),
 			Tags:     pulumi.StringArray{pulumi.String("frontend"), pulumi.String("cgc")},
 		})
@@ -144,15 +149,6 @@ func main() {
 
 			// Inbound rules
 			InboundRules: digitalocean.FirewallInboundRuleArray{
-				// SSH access
-				&digitalocean.FirewallInboundRuleArgs{
-					Protocol:  pulumi.String("tcp"),
-					PortRange: pulumi.String("22"),
-					SourceAddresses: pulumi.StringArray{
-						pulumi.String("0.0.0.0/0"),
-						pulumi.String("::/0"),
-					},
-				},
 				// HTTP access
 				&digitalocean.FirewallInboundRuleArgs{
 					Protocol:  pulumi.String("tcp"),
@@ -183,6 +179,14 @@ func main() {
 				&digitalocean.FirewallInboundRuleArgs{
 					Protocol:  pulumi.String("tcp"),
 					PortRange: pulumi.String("3000"),
+					SourceAddresses: pulumi.StringArray{
+						pulumi.String("10.10.0.0/16"), // VPC only
+					},
+				},
+				// Valkey database port (internal VPC access only)
+				&digitalocean.FirewallInboundRuleArgs{
+					Protocol:  pulumi.String("tcp"),
+					PortRange: pulumi.String("25061"), // Standard Valkey port in DO
 					SourceAddresses: pulumi.StringArray{
 						pulumi.String("10.10.0.0/16"), // VPC only
 					},
@@ -227,6 +231,10 @@ func main() {
 		ctx.Export("spacesCdnEndpoint", spacesCdn.Endpoint)
 		ctx.Export("vpcId", vpc.ID())
 		ctx.Export("firewallId", firewall.ID())
+		ctx.Export("valkeyClusterHost", valkeyCluster.Host)
+		ctx.Export("valkeyClusterPort", valkeyCluster.Port)
+		ctx.Export("valkeyClusterUri", valkeyCluster.Uri)
+		ctx.Export("valkeyClusterPassword", valkeyCluster.Password)
 
 		return nil
 	})

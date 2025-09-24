@@ -9,9 +9,7 @@ This document describes how to set up GitHub repository secrets for automated de
 | Secret Name | Description | Example |
 |-------------|-------------|---------|
 | `PULUMI_ACCESS_TOKEN` | Pulumi access token for state management | `pul-abc123...` |
-| `DO_API_KEY` | Digital Ocean API token | `dop_v1_abc123...` |
-| `SSH_KEY_NAME` | Name of your SSH key in Digital Ocean | `my-ssh-key` |
-| `SSH_PRIVATE_KEY` | Private SSH key for droplet access | `-----BEGIN OPENSSH PRIVATE KEY-----\n...` |
+| `DO_ACCESS_TOKEN` | Digital Ocean access token | `dop_v1_abc123...` |
 
 ### Application Secrets
 
@@ -21,12 +19,6 @@ This document describes how to set up GitHub repository secrets for automated de
 | `LEONARDO_API_KEY` | Leonardo AI API key | `leonardo_...` |
 | `FREEPIK_API_KEY` | Freepik API key | `freepik_...` |
 
-### Optional Secrets (for advanced setups)
-
-| Secret Name | Description | When to use |
-|-------------|-------------|-------------|
-| `AWS_ACCESS_KEY_ID` | AWS access key for Pulumi S3 backend | If using S3 for Pulumi state |
-| `AWS_SECRET_ACCESS_KEY` | AWS secret key for Pulumi S3 backend | If using S3 for Pulumi state |
 
 ## How to Add Secrets
 
@@ -44,23 +36,18 @@ pulumi login
 # Go to https://app.pulumi.com/account/tokens to create a new token
 ```
 
-### 2. Digital Ocean API Key
+### 2. Digital Ocean Access Token
 1. Go to [Digital Ocean API Tokens](https://cloud.digitalocean.com/account/api/tokens)
 2. Create a new Personal Access Token
 3. Give it read/write permissions
 
-### 3. SSH Key Setup
-```bash
-# Generate a new SSH key pair for deployment
-ssh-keygen -t rsa -b 4096 -f ~/.ssh/cgc-deploy -N ""
+### 3. Digital Ocean Services (Automatic)
+Your infrastructure will automatically create and configure:
+- **Digital Ocean Spaces**: Object storage for generated content
+- **Valkey Database**: Managed in-memory database for caching user votes
+- **VPC and Networking**: Private network for secure service communication
 
-# Add public key to Digital Ocean
-# Go to https://cloud.digitalocean.com/account/security
-# Add the content of ~/.ssh/cgc-deploy.pub
-
-# Use the private key content for SSH_PRIVATE_KEY secret
-cat ~/.ssh/cgc-deploy
-```
+No additional setup required - these services are provisioned during infrastructure deployment.
 
 ### 4. API Keys for Image Services
 - **Google API Key**: [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
@@ -132,7 +119,7 @@ Consider setting up monitoring for:
 | SSH Keys | Every 90 days | Coordinate with team deployments |
 | API Keys | Every 6 months | Check with service providers for best practices |
 | Pulumi Tokens | Every 12 months | Ensure team access continuity |
-| DO API Keys | Every 6 months | Monitor for any unauthorized usage |
+| DO Access Tokens | Every 6 months | Monitor for any unauthorized usage |
 
 ## Support
 

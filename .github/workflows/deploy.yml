@@ -1,0 +1,66 @@
+name: Deploy Infrastructure
+
+on:
+  workflow_dispatch:
+
+env:
+  PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+  DIGITALOCEAN_TOKEN: ${{ secrets.DO_ACCESS_TOKEN }}
+
+jobs:
+  deploy:
+    name: Deploy Infrastructure
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+        cache-dependency-path: hosting/go.sum
+
+    - name: Setup Pulumi CLI
+      uses: pulumi/actions@v4
+
+
+    - name: Build infrastructure program
+      working-directory: hosting
+      run: |
+        mkdir -p bin
+        go mod download
+        go build -o bin/cgc-hosting .
+
+    - name: Deploy infrastructure
+      working-directory: hosting
+      run: |
+        pulumi stack select dev --create
+        pulumi config set digitalocean:region nyc3
+        pulumi up --yes
+      env:
+        PULUMI_STACK: dev
+
+    - name: Export stack outputs
+      if: success()
+      working-directory: hosting
+      run: |
+        echo "## Infrastructure Outputs" >> $GITHUB_STEP_SUMMARY
+        echo "### Load Balancer IP" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        pulumi stack output loadBalancerIp >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "### Backend Droplet IP" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        pulumi stack output backendDropletIp >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "### Frontend Droplet IP" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        pulumi stack output frontendDropletIp >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "### Valkey Database" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "Host: $(pulumi stack output valkeyClusterHost)" >> $GITHUB_STEP_SUMMARY
+        echo "Port: $(pulumi stack output valkeyClusterPort)" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
