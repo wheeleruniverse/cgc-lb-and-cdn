@@ -109,7 +109,7 @@ func main() {
 			Region: pulumi.String("nyc3"),
 			Size:   pulumi.String("lb-small"),
 
-			// Forward HTTP traffic to backend and frontend
+			// Forward HTTP traffic to backend
 			ForwardingRules: digitalocean.LoadBalancerForwardingRuleArray{
 				// API traffic to backend
 				&digitalocean.LoadBalancerForwardingRuleArgs{
@@ -117,14 +117,6 @@ func main() {
 					EntryPort:      pulumi.Int(80),
 					TargetProtocol: pulumi.String("http"),
 					TargetPort:     pulumi.Int(8080),
-				},
-				// HTTPS traffic (optional, for SSL termination)
-				&digitalocean.LoadBalancerForwardingRuleArgs{
-					EntryProtocol:   pulumi.String("https"),
-					EntryPort:       pulumi.Int(443),
-					TargetProtocol:  pulumi.String("http"),
-					TargetPort:      pulumi.Int(8080),
-					CertificateName: pulumi.String(""), // Add SSL certificate if available
 				},
 			},
 
@@ -148,9 +140,6 @@ func main() {
 
 			// Add droplets by tag
 			DropletTag: pulumi.String("cgc"),
-
-			// Redirect HTTP to HTTPS
-			RedirectHttpToHttps: pulumi.Bool(false), // Set to true if using SSL
 		})
 		if err != nil {
 			return err
