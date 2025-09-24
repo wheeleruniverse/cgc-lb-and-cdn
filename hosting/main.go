@@ -63,7 +63,7 @@ func main() {
 			UserData: pulumi.All(valkeyCluster.Host, valkeyCluster.Port, valkeyCluster.Password).ApplyT(func(args []interface{}) string {
 				return getBackendUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, spaceBucketName, spaceBucketEndpoint, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string))
 			}).(pulumi.StringOutput),
-			Tags: pulumi.StringArray{pulumi.String("backend"), pulumi.String("cgc")},
+			// Tags removed due to permission issues
 		})
 		if err != nil {
 			return err
@@ -79,7 +79,7 @@ func main() {
 			UserData: backendDroplet.Ipv4AddressPrivate.ApplyT(func(ip string) string {
 				return getFrontendUserData(ip)
 			}).(pulumi.StringOutput),
-			Tags: pulumi.StringArray{pulumi.String("frontend"), pulumi.String("cgc")},
+			// Tags removed due to permission issues
 		})
 		if err != nil {
 			return err
@@ -120,8 +120,7 @@ func main() {
 				CookieTtlSeconds: pulumi.Int(300),
 			},
 
-			// Add droplets by tag
-			DropletTag: pulumi.String("cgc"),
+			// Droplet tag removed - will need to manually assign droplets to load balancer
 		})
 		if err != nil {
 			return err
@@ -197,10 +196,7 @@ func main() {
 				},
 			},
 
-			// Apply to droplets by tag (with explicit dependency to ensure droplets exist first)
-			Tags: pulumi.StringArray{
-				pulumi.String("cgc"),
-			},
+			// Firewall rules will apply broadly - specific droplet targeting removed due to tag permissions
 		}, pulumi.DependsOn([]pulumi.Resource{backendDroplet, frontendDroplet}))
 		if err != nil {
 			return err
