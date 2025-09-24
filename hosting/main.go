@@ -47,11 +47,7 @@ func main() {
 			Region:             pulumi.String("nyc3"),
 			NodeCount:          pulumi.Int(1), // Single node for cost efficiency
 			PrivateNetworkUuid: vpc.ID(),
-			Tags: pulumi.StringArray{
-				pulumi.String("cgc"),
-				pulumi.String("valkey"),
-				pulumi.String("cache"),
-			},
+			// Tags removed due to permission issues - can be added manually in DO console
 		})
 		if err != nil {
 			return err
