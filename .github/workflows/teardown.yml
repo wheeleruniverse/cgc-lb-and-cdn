@@ -1,0 +1,68 @@
+name: Teardown Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "DESTROY" to confirm teardown'
+        required: true
+        type: string
+
+env:
+  PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+  DIGITALOCEAN_TOKEN: ${{ secrets.DO_ACCESS_TOKEN }}
+
+jobs:
+  teardown:
+    name: Destroy Infrastructure
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'DESTROY'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+        cache-dependency-path: hosting/go.sum
+
+    - name: Setup Pulumi CLI
+      uses: pulumi/actions@v4
+
+    - name: Build infrastructure program
+      working-directory: hosting
+      run: |
+        mkdir -p bin
+        go mod download
+        go build -o bin/cgc-hosting .
+
+    - name: Destroy infrastructure
+      working-directory: hosting
+      run: |
+        pulumi stack select dev
+        echo "🗑️ Starting infrastructure teardown..." >> $GITHUB_STEP_SUMMARY
+        pulumi destroy --yes
+        echo "✅ Infrastructure successfully destroyed!" >> $GITHUB_STEP_SUMMARY
+        echo "💰 Monthly cost savings: ~$39/month" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📋 Manual Cleanup (if needed)" >> $GITHUB_STEP_SUMMARY
+        echo "- Delete DO Spaces bucket 'cgc-generated-content' if created manually" >> $GITHUB_STEP_SUMMARY
+        echo "- Remove unused GitHub secrets if desired" >> $GITHUB_STEP_SUMMARY
+      env:
+        PULUMI_STACK: dev
+
+  teardown-failed:
+    name: Teardown Confirmation Required
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm != 'DESTROY'
+
+    steps:
+    - name: Confirmation failed
+      run: |
+        echo "❌ Teardown cancelled - confirmation required" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "To destroy infrastructure, type exactly: **DESTROY**" >> $GITHUB_STEP_SUMMARY
+        echo "This safety measure prevents accidental deletion." >> $GITHUB_STEP_SUMMARY
+        exit 1
