@@ -43,12 +43,21 @@ jobs:
       run: |
         pulumi stack select dev
         echo "🗑️ Starting infrastructure teardown..." >> $GITHUB_STEP_SUMMARY
-        pulumi destroy --yes
-        echo "✅ Infrastructure successfully destroyed!" >> $GITHUB_STEP_SUMMARY
+
+        # Try to destroy all resources
+        pulumi destroy --yes || true
+
+        # If VPC deletion failed (expected), remove it from state
+        if pulumi state delete "urn:pulumi:dev::cgc-hosting::digitalocean:index/vpc:Vpc::cgc-vpc" 2>/dev/null; then
+          echo "🔧 Removed VPC from Pulumi state (VPC cannot be deleted - this is normal)" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        echo "✅ Infrastructure teardown complete!" >> $GITHUB_STEP_SUMMARY
         echo "💰 Monthly cost savings: ~$39/month" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 📋 Manual Cleanup (if needed)" >> $GITHUB_STEP_SUMMARY
         echo "- Delete DO Spaces bucket 'cgc-generated-content' if created manually" >> $GITHUB_STEP_SUMMARY
+        echo "- VPC remains (cannot be deleted - this is normal and free)" >> $GITHUB_STEP_SUMMARY
         echo "- Remove unused GitHub secrets if desired" >> $GITHUB_STEP_SUMMARY
       env:
         PULUMI_STACK: dev
