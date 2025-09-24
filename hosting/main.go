@@ -23,24 +23,10 @@ func main() {
 			useDoSpaces = "false" // Default to local storage
 		}
 
-		// Create Spaces bucket for content storage
-		spacesBucket, err := digitalocean.NewSpacesBucket(ctx, "cgc-content-storage", &digitalocean.SpacesBucketArgs{
-			Name:   pulumi.String("cgc-generated-content"),
-			Region: pulumi.String("nyc3"),
-			Acl:    pulumi.String("public-read"),
-		})
-		if err != nil {
-			return err
-		}
-
-		// Create Spaces CDN endpoint
-		spacesCdn, err := digitalocean.NewCdn(ctx, "cgc-spaces-cdn", &digitalocean.CdnArgs{
-			Origin: spacesBucket.BucketDomainName,
-			Ttl:    pulumi.Int(3600),
-		})
-		if err != nil {
-			return err
-		}
+		// Note: Spaces bucket creation requires separate Spaces credentials
+		// For now, we'll create a placeholder and configure Spaces manually
+		spaceBucketName := "cgc-generated-content"
+		spaceBucketEndpoint := "nyc3.digitaloceanspaces.com"
 
 		// Create VPC for the project
 		vpc, err := digitalocean.NewVpc(ctx, "cgc-vpc", &digitalocean.VpcArgs{
@@ -78,8 +64,8 @@ func main() {
 			Size:    pulumi.String("s-1vcpu-1gb"),
 			Region:  pulumi.String("nyc3"),
 			VpcUuid: vpc.ID(),
-			UserData: pulumi.All(spacesBucket.Name, spacesBucket.BucketDomainName, valkeyCluster.Host, valkeyCluster.Port, valkeyCluster.Password).ApplyT(func(args []interface{}) string {
-				return getBackendUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, args[0].(string), args[1].(string), args[2].(string), fmt.Sprintf("%v", args[3]), args[4].(string))
+			UserData: pulumi.All(valkeyCluster.Host, valkeyCluster.Port, valkeyCluster.Password).ApplyT(func(args []interface{}) string {
+				return getBackendUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, spaceBucketName, spaceBucketEndpoint, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string))
 			}).(pulumi.StringOutput),
 			Tags: pulumi.StringArray{pulumi.String("backend"), pulumi.String("cgc")},
 		})
@@ -145,7 +131,7 @@ func main() {
 			return err
 		}
 
-		// Create firewall rules
+		// Create firewall rules (depends on droplets being created first)
 		firewall, err := digitalocean.NewFirewall(ctx, "cgc-firewall", &digitalocean.FirewallArgs{
 			Name: pulumi.String("cgc-firewall"),
 
@@ -215,11 +201,12 @@ func main() {
 				},
 			},
 
-			// Apply to droplets by tag
-			Tags: pulumi.StringArray{
-				pulumi.String("cgc"),
+			// Apply to specific droplets instead of tags
+			DropletIds: pulumi.IntArray{
+				backendDroplet.ID().ToIntOutput(),
+				frontendDroplet.ID().ToIntOutput(),
 			},
-		})
+		}, pulumi.DependsOn([]pulumi.Resource{backendDroplet, frontendDroplet}))
 		if err != nil {
 			return err
 		}
@@ -228,9 +215,9 @@ func main() {
 		ctx.Export("loadBalancerIp", loadBalancer.Ip)
 		ctx.Export("backendDropletIp", backendDroplet.Ipv4Address)
 		ctx.Export("frontendDropletIp", frontendDroplet.Ipv4Address)
-		ctx.Export("spacesBucketName", spacesBucket.Name)
-		ctx.Export("spacesBucketEndpoint", spacesBucket.BucketDomainName)
-		ctx.Export("spacesCdnEndpoint", spacesCdn.Endpoint)
+		ctx.Export("spacesBucketName", pulumi.String(spaceBucketName))
+		ctx.Export("spacesBucketEndpoint", pulumi.String(spaceBucketEndpoint))
+		ctx.Export("spacesCdnEndpoint", pulumi.String("https://"+spaceBucketName+"."+spaceBucketEndpoint))
 		ctx.Export("vpcId", vpc.ID())
 		ctx.Export("firewallId", firewall.ID())
 		ctx.Export("valkeyClusterHost", valkeyCluster.Host)
