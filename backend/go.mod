@@ -3,7 +3,6 @@ module cgc-image-service
 go 1.23
 
 require (
-	github.com/aws/aws-sdk-go v1.55.5
 	github.com/gin-gonic/gin v1.10.1
 	github.com/google/uuid v1.6.0
 	google.golang.org/genai v1.22.0

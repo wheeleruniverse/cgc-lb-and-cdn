@@ -1,15 +1,23 @@
 package providers
 
 import (
+	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha1"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"cgc-image-service/internal/models"
+
+	"github.com/google/uuid"
 )
 
 // BaseProvider provides common functionality for all image generation providers
@@ -110,6 +118,104 @@ func (bp *BaseProvider) RefreshQuota(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// SaveToSpaces uploads image data to DigitalOcean Spaces using direct HTTP
+func (bp *BaseProvider) SaveToSpaces(imageData []byte, filename, imageID string) (*models.GeneratedImage, error) {
+	// Get DO Spaces configuration
+	bucketName := os.Getenv("DO_SPACES_BUCKET")
+	endpoint := os.Getenv("DO_SPACES_ENDPOINT")
+	accessKey := os.Getenv("DO_SPACES_KEY")
+	secretKey := os.Getenv("DO_SPACES_SECRET")
+
+	if bucketName == "" || endpoint == "" || accessKey == "" || secretKey == "" {
+		return nil, fmt.Errorf("missing DO Spaces configuration")
+	}
+
+	// Construct URL
+	url := fmt.Sprintf("https://%s.%s/%s", bucketName, endpoint, filename)
+
+	// Create HTTP request
+	req, err := http.NewRequest("PUT", url, bytes.NewReader(imageData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Set headers
+	req.Header.Set("Content-Type", "image/png")
+	req.Header.Set("x-amz-acl", "public-read")
+
+	// Create signature for authentication
+	date := time.Now().UTC().Format(time.RFC1123)
+	req.Header.Set("Date", date)
+
+	// Create string to sign
+	stringToSign := fmt.Sprintf("PUT\n\nimage/png\n%s\nx-amz-acl:public-read\n/%s/%s", date, bucketName, filename)
+
+	// Create signature
+	h := hmac.New(sha1.New, []byte(secretKey))
+	h.Write([]byte(stringToSign))
+	signature := base64.StdEncoding.EncodeToString(h.Sum(nil))
+
+	// Set authorization header
+	req.Header.Set("Authorization", fmt.Sprintf("AWS %s:%s", accessKey, signature))
+
+	// Make request
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to upload to DO Spaces: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to upload to DO Spaces: HTTP %d", resp.StatusCode)
+	}
+
+	return &models.GeneratedImage{
+		ID:       imageID,
+		Filename: filename,
+		Path:     url,
+		Size:     int64(len(imageData)),
+	}, nil
+}
+
+// SaveToLocal saves image data to local disk
+func (bp *BaseProvider) SaveToLocal(imageData []byte, filename, imageID string) (*models.GeneratedImage, error) {
+	// Ensure images directory exists
+	if err := os.MkdirAll(bp.imageDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create images directory: %w", err)
+	}
+
+	fullPath := filepath.Join(bp.imageDir, filename)
+
+	// Write to file
+	if err := os.WriteFile(fullPath, imageData, 0644); err != nil {
+		return nil, fmt.Errorf("failed to write image file: %w", err)
+	}
+
+	return &models.GeneratedImage{
+		ID:       imageID,
+		Filename: filename,
+		Path:     fullPath,
+		Size:     int64(len(imageData)),
+	}, nil
+}
+
+// SaveImage saves image data to either DO Spaces or local disk based on USE_DO_SPACES environment variable
+func (bp *BaseProvider) SaveImage(imageData []byte, filePrefix string) (*models.GeneratedImage, error) {
+	// Generate unique identifiers
+	imageID := uuid.New().String()
+	filename := fmt.Sprintf("%s-%s.png", filePrefix, imageID)
+
+	// Check if we should use DO Spaces or local storage
+	useSpaces := os.Getenv("USE_DO_SPACES") == "true"
+
+	if useSpaces {
+		return bp.SaveToSpaces(imageData, filename, imageID)
+	} else {
+		return bp.SaveToLocal(imageData, filename, imageID)
+	}
 }
 
 // MakeHTTPRequest is a helper for making HTTP requests with error handling
