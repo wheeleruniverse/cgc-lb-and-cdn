@@ -104,8 +104,24 @@ jobs:
         npm ci
         npm run build
 
-        # Create deployment archive
-        tar -czf ../frontend-deploy.tar.gz .next public package.json package-lock.json ecosystem.config.js
+        # Create ecosystem.config.js for PM2
+        cat > ecosystem.config.js << 'EOF'
+        module.exports = {
+          apps: [{
+            name: 'cgc-frontend',
+            script: 'npm',
+            args: 'start',
+            cwd: '/opt/cgc-frontend/frontend',
+            env: {
+              NODE_ENV: 'production',
+              PORT: 3000
+            }
+          }]
+        }
+        EOF
+
+        # Create deployment archive with only existing files
+        tar -czf ../frontend-deploy.tar.gz .next package.json package-lock.json ecosystem.config.js
         cd ..
 
         echo "✅ Frontend application built and packaged" >> $GITHUB_STEP_SUMMARY
