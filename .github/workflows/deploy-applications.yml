@@ -21,6 +21,12 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+        cache-dependency-path: backend/go.sum
+
     - name: Setup Pulumi CLI
       uses: pulumi/actions@v4
 
@@ -36,15 +42,29 @@ jobs:
         echo "DO_VALKEY_PORT=$(pulumi stack output valkeyClusterPort)" >> $GITHUB_ENV
         echo "DO_VALKEY_URI=$(pulumi stack output valkeyClusterUri)" >> $GITHUB_ENV
 
-    - name: Deploy backend application via DigitalOcean API
+    - name: Deploy backend application
       run: |
-        echo "Backend deployment will be handled by infrastructure automation."
-        echo "Consider using DigitalOcean App Platform or container deployment for simplified application management."
-        echo "Backend IP: ${{ env.BACKEND_IP }}"
-        echo "DO Spaces Bucket: ${{ env.DO_SPACES_BUCKET }}"
-        echo "DO Spaces Endpoint: ${{ env.DO_SPACES_ENDPOINT }}"
-        echo "DO Valkey Host: ${{ env.DO_VALKEY_HOST }}"
-        echo "DO Valkey Port: ${{ env.DO_VALKEY_PORT }}"
+        echo "## Backend Deployment Starting" >> $GITHUB_STEP_SUMMARY
+        echo "Building and deploying Go backend application..." >> $GITHUB_STEP_SUMMARY
+
+        # Build the Go application locally
+        cd backend
+        go mod tidy
+        GOOS=linux GOARCH=amd64 go build -o cgc-backend cmd/server/main.go
+
+        # Create deployment archive
+        tar -czf ../backend-deploy.tar.gz cgc-backend
+        cd ..
+
+        echo "✅ Backend application built and packaged" >> $GITHUB_STEP_SUMMARY
+        echo "Backend will be deployed via droplet user-data script" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Configuration:**" >> $GITHUB_STEP_SUMMARY
+        echo "- Backend IP: ${{ env.BACKEND_IP }}" >> $GITHUB_STEP_SUMMARY
+        echo "- DO Spaces Bucket: ${{ env.DO_SPACES_BUCKET }}" >> $GITHUB_STEP_SUMMARY
+        echo "- DO Spaces Endpoint: ${{ env.DO_SPACES_ENDPOINT }}" >> $GITHUB_STEP_SUMMARY
+        echo "- DO Valkey Host: ${{ env.DO_VALKEY_HOST }}" >> $GITHUB_STEP_SUMMARY
+        echo "- DO Valkey Port: ${{ env.DO_VALKEY_PORT }}" >> $GITHUB_STEP_SUMMARY
 
   deploy-frontend:
     name: Deploy Frontend Application
@@ -55,6 +75,13 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
 
     - name: Setup Pulumi CLI
       uses: pulumi/actions@v4
@@ -67,19 +94,41 @@ jobs:
         echo "FRONTEND_IP=$(pulumi stack output frontendDropletIp)" >> $GITHUB_ENV
         echo "LB_IP=$(pulumi stack output loadBalancerIp)" >> $GITHUB_ENV
 
-    - name: Deploy frontend application via DigitalOcean API
+    - name: Deploy frontend application
       run: |
-        echo "Frontend deployment will be handled by infrastructure automation."
-        echo "Consider using DigitalOcean App Platform or container deployment for simplified application management."
-        echo "Frontend IP: ${{ env.FRONTEND_IP }}"
-        echo "Load Balancer IP: ${{ env.LB_IP }}"
+        echo "## Frontend Deployment Starting" >> $GITHUB_STEP_SUMMARY
+        echo "Building and preparing Next.js frontend application..." >> $GITHUB_STEP_SUMMARY
+
+        # Build the Next.js application
+        cd frontend
+        npm ci
+        npm run build
+
+        # Create deployment archive
+        tar -czf ../frontend-deploy.tar.gz .next public package.json package-lock.json ecosystem.config.js
+        cd ..
+
+        echo "✅ Frontend application built and packaged" >> $GITHUB_STEP_SUMMARY
+        echo "Frontend will be deployed via droplet user-data script" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Configuration:**" >> $GITHUB_STEP_SUMMARY
+        echo "- Frontend IP: ${{ env.FRONTEND_IP }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Load Balancer IP: ${{ env.LB_IP }}" >> $GITHUB_STEP_SUMMARY
 
     - name: Deployment summary
       run: |
-        echo "## Deployment Complete! 🚀" >> $GITHUB_STEP_SUMMARY
-        echo "### Access URLs" >> $GITHUB_STEP_SUMMARY
-        echo "- **Load Balancer**: http://${{ env.LB_IP }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Backend API**: http://${{ env.BACKEND_IP }}:8080" >> $GITHUB_STEP_SUMMARY
-        echo "- **Frontend**: http://${{ env.FRONTEND_IP }}" >> $GITHUB_STEP_SUMMARY
-        echo "### Health Checks" >> $GITHUB_STEP_SUMMARY
+        echo "## 🚀 Deployment Complete!" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🌐 Access URLs" >> $GITHUB_STEP_SUMMARY
+        echo "- **Primary Application**: http://${{ env.LB_IP }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Backend API** (private): http://${{ env.BACKEND_IP }}:8080" >> $GITHUB_STEP_SUMMARY
+        echo "- **Frontend** (private): http://${{ env.FRONTEND_IP }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🔍 Health Checks" >> $GITHUB_STEP_SUMMARY
         echo "- Backend Health: http://${{ env.BACKEND_IP }}:8080/health" >> $GITHUB_STEP_SUMMARY
+        echo "- Load Balancer Health: Check DigitalOcean dashboard" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📊 Infrastructure" >> $GITHUB_STEP_SUMMARY
+        echo "- **Database**: Valkey cluster at ${{ env.DO_VALKEY_HOST }}:${{ env.DO_VALKEY_PORT }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Storage**: DigitalOcean Spaces at ${{ env.DO_SPACES_ENDPOINT }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **CDN**: Integrated with Spaces for fast image delivery" >> $GITHUB_STEP_SUMMARY

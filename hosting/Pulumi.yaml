@@ -5,7 +5,7 @@ description: Digital Ocean infrastructure for CGC Load Balancing and CDN project
 config:
   digitalocean:region:
     description: Digital Ocean region
-    default: nyc3
+    value: nyc3
   cgc-hosting:domain:
     description: Domain name for the application
-    default: ""
+    value: ""

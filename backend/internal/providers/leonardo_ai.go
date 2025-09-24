@@ -5,10 +5,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"cgc-image-service/internal/models"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/google/uuid"
 )
 
 // LeonardoAIProvider implements image generation using Leonardo AI's API
@@ -199,7 +207,7 @@ func (lp *LeonardoAIProvider) pollForCompletion(ctx context.Context, generationI
 			// Download and save images
 			var images []models.GeneratedImage
 			for i, img := range generation.GeneratedImages {
-				generatedImg, err := lp.SaveImageFromURL(img.URL, "leonardo-ai")
+				generatedImg, err := lp.saveImageFromURL(img.URL, "leonardo-ai")
 				if err != nil {
 					return nil, fmt.Errorf("failed to save image %d: %w", i+1, err)
 				}
@@ -221,6 +229,110 @@ func (lp *LeonardoAIProvider) pollForCompletion(ctx context.Context, generationI
 	}
 
 	return nil, fmt.Errorf("generation timed out after %d attempts", maxAttempts)
+}
+
+// saveImageFromURL downloads and saves an image from a URL to either DO Spaces or local disk
+func (lp *LeonardoAIProvider) saveImageFromURL(imageURL, filePrefix string) (*models.GeneratedImage, error) {
+	// Download image
+	resp, err := lp.httpClient.Get(imageURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download image: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to download image: HTTP %d", resp.StatusCode)
+	}
+
+	// Read image data into memory
+	imageData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read image data: %w", err)
+	}
+
+	// Generate unique identifiers
+	imageID := uuid.New().String()
+	filename := fmt.Sprintf("%s-%s.png", filePrefix, imageID)
+
+	// Check if we should use DO Spaces or local storage
+	useSpaces := os.Getenv("USE_DO_SPACES") == "true"
+
+	if useSpaces {
+		return lp.saveToSpaces(imageData, filename, imageID)
+	} else {
+		return lp.saveToLocal(imageData, filename, imageID)
+	}
+}
+
+// saveToSpaces uploads image to DigitalOcean Spaces
+func (lp *LeonardoAIProvider) saveToSpaces(imageData []byte, filename, imageID string) (*models.GeneratedImage, error) {
+	// Get DO Spaces configuration
+	bucketName := os.Getenv("DO_SPACES_BUCKET")
+	endpoint := os.Getenv("DO_SPACES_ENDPOINT")
+	accessKey := os.Getenv("DO_SPACES_KEY")
+	secretKey := os.Getenv("DO_SPACES_SECRET")
+
+	if bucketName == "" || endpoint == "" || accessKey == "" || secretKey == "" {
+		return nil, fmt.Errorf("missing DO Spaces configuration")
+	}
+
+	// Create S3-compatible session for DO Spaces
+	sess, err := session.NewSession(&aws.Config{
+		Endpoint:         aws.String(endpoint),
+		Region:           aws.String("nyc3"), // DO Spaces region
+		Credentials:      aws.NewStaticCredentials(accessKey, secretKey, ""),
+		S3ForcePathStyle: aws.Bool(false),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create DO Spaces session: %w", err)
+	}
+
+	s3Client := s3.New(sess)
+
+	// Upload to Spaces
+	_, err = s3Client.PutObject(&s3.PutObjectInput{
+		Bucket:        aws.String(bucketName),
+		Key:           aws.String(filename),
+		Body:          bytes.NewReader(imageData),
+		ContentType:   aws.String("image/png"),
+		ContentLength: aws.Int64(int64(len(imageData))),
+		ACL:           aws.String("public-read"),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to upload to DO Spaces: %w", err)
+	}
+
+	// Construct public URL
+	publicURL := fmt.Sprintf("https://%s.%s/%s", bucketName, endpoint, filename)
+
+	return &models.GeneratedImage{
+		ID:       imageID,
+		Filename: filename,
+		Path:     publicURL,
+		Size:     int64(len(imageData)),
+	}, nil
+}
+
+// saveToLocal saves image to local disk
+func (lp *LeonardoAIProvider) saveToLocal(imageData []byte, filename, imageID string) (*models.GeneratedImage, error) {
+	// Ensure images directory exists
+	if err := os.MkdirAll(lp.imageDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create images directory: %w", err)
+	}
+
+	fullPath := filepath.Join(lp.imageDir, filename)
+
+	// Write to file
+	if err := os.WriteFile(fullPath, imageData, 0644); err != nil {
+		return nil, fmt.Errorf("failed to write image file: %w", err)
+	}
+
+	return &models.GeneratedImage{
+		ID:       imageID,
+		Filename: filename,
+		Path:     fullPath,
+		Size:     int64(len(imageData)),
+	}, nil
 }
 
 // LeonardoUserResponse represents the response from Leonardo AI /me endpoint

@@ -38,6 +38,15 @@ jobs:
       run: |
         pulumi stack select dev --create
         pulumi config set digitalocean:region nyc3
+
+        # Configure API keys as Pulumi secrets
+        pulumi config set --secret cgc-hosting:google_api_key "${{ secrets.GOOGLE_API_KEY }}"
+        pulumi config set --secret cgc-hosting:leonardo_api_key "${{ secrets.LEONARDO_API_KEY }}"
+        pulumi config set --secret cgc-hosting:freepik_api_key "${{ secrets.FREEPIK_API_KEY }}"
+
+        # Configure storage settings
+        pulumi config set cgc-hosting:use_do_spaces "true"
+
         pulumi up --yes
       env:
         PULUMI_STACK: dev

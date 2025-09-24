@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/pulumi/pulumi-digitalocean/sdk/v4/go/digitalocean"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
@@ -11,6 +13,15 @@ func main() {
 		// Load configuration
 		cfg := config.New(ctx, "")
 		_ = cfg.Get("domain") // Domain configuration for future SSL setup
+
+		// Get API keys from Pulumi config (passed from GitHub Actions)
+		googleAPIKey := cfg.Get("google_api_key")
+		leonardoAPIKey := cfg.Get("leonardo_api_key")
+		freepikAPIKey := cfg.Get("freepik_api_key")
+		useDoSpaces := cfg.Get("use_do_spaces")
+		if useDoSpaces == "" {
+			useDoSpaces = "false" // Default to local storage
+		}
 
 		// Create Spaces bucket for content storage
 		spacesBucket, err := digitalocean.NewSpacesBucket(ctx, "cgc-content-storage", &digitalocean.SpacesBucketArgs{
@@ -62,13 +73,15 @@ func main() {
 
 		// Backend droplet for Go API server
 		backendDroplet, err := digitalocean.NewDroplet(ctx, "cgc-backend", &digitalocean.DropletArgs{
-			Name:     pulumi.String("cgc-backend"),
-			Image:    pulumi.String("ubuntu-22-04-x64"),
-			Size:     pulumi.String("s-1vcpu-1gb"),
-			Region:   pulumi.String("nyc3"),
-			VpcUuid:  vpc.ID(),
-			UserData: pulumi.String(getBackendUserData()),
-			Tags:     pulumi.StringArray{pulumi.String("backend"), pulumi.String("cgc")},
+			Name:    pulumi.String("cgc-backend"),
+			Image:   pulumi.String("ubuntu-22-04-x64"),
+			Size:    pulumi.String("s-1vcpu-1gb"),
+			Region:  pulumi.String("nyc3"),
+			VpcUuid: vpc.ID(),
+			UserData: pulumi.All(spacesBucket.Name, spacesBucket.BucketDomainName, valkeyCluster.Host, valkeyCluster.Port, valkeyCluster.Password).ApplyT(func(args []interface{}) string {
+				return getBackendUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, args[0].(string), args[1].(string), args[2].(string), fmt.Sprintf("%v", args[3]), args[4].(string))
+			}).(pulumi.StringOutput),
+			Tags: pulumi.StringArray{pulumi.String("backend"), pulumi.String("cgc")},
 		})
 		if err != nil {
 			return err
@@ -76,13 +89,15 @@ func main() {
 
 		// Frontend droplet for Next.js application
 		frontendDroplet, err := digitalocean.NewDroplet(ctx, "cgc-frontend", &digitalocean.DropletArgs{
-			Name:     pulumi.String("cgc-frontend"),
-			Image:    pulumi.String("ubuntu-22-04-x64"),
-			Size:     pulumi.String("s-1vcpu-1gb"),
-			Region:   pulumi.String("nyc3"),
-			VpcUuid:  vpc.ID(),
-			UserData: pulumi.String(getFrontendUserData()),
-			Tags:     pulumi.StringArray{pulumi.String("frontend"), pulumi.String("cgc")},
+			Name:    pulumi.String("cgc-frontend"),
+			Image:   pulumi.String("ubuntu-22-04-x64"),
+			Size:    pulumi.String("s-1vcpu-1gb"),
+			Region:  pulumi.String("nyc3"),
+			VpcUuid: vpc.ID(),
+			UserData: backendDroplet.Ipv4AddressPrivate.ApplyT(func(ip string) string {
+				return getFrontendUserData(ip)
+			}).(pulumi.StringOutput),
+			Tags: pulumi.StringArray{pulumi.String("frontend"), pulumi.String("cgc")},
 		})
 		if err != nil {
 			return err
@@ -239,8 +254,8 @@ func main() {
 }
 
 // getBackendUserData returns the cloud-init script for the backend droplet
-func getBackendUserData() string {
-	return `#!/bin/bash
+func getBackendUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, spacesBucket, spacesEndpoint, valkeyHost, valkeyPort, valkeyPassword string) string {
+	return fmt.Sprintf(`#!/bin/bash
 set -e
 
 # Update system
@@ -262,6 +277,21 @@ echo 'export PATH=$PATH:/opt/go/bin' >> /etc/profile
 mkdir -p /opt/cgc-backend
 cd /opt/cgc-backend
 
+# Create environment file for the backend service
+cat > /opt/cgc-backend/.env << 'ENVEOF'
+PORT=8080
+HOST=0.0.0.0
+GOOGLE_API_KEY=%s
+LEONARDO_API_KEY=%s
+FREEPIK_API_KEY=%s
+USE_DO_SPACES=%s
+DO_SPACES_BUCKET=%s
+DO_SPACES_ENDPOINT=%s
+DO_VALKEY_HOST=%s
+DO_VALKEY_PORT=%s
+DO_VALKEY_PASSWORD=%s
+ENVEOF
+
 # Create systemd service file
 cat > /etc/systemd/system/cgc-backend.service << 'EOF'
 [Unit]
@@ -273,8 +303,7 @@ Type=simple
 User=root
 WorkingDirectory=/opt/cgc-backend
 Environment=PATH=/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-Environment=PORT=8080
-Environment=HOST=0.0.0.0
+EnvironmentFile=/opt/cgc-backend/.env
 ExecStart=/opt/cgc-backend/server
 Restart=always
 RestartSec=10
@@ -290,12 +319,12 @@ systemctl enable cgc-backend.service
 # This could be done via CI/CD pipeline or manual deployment
 echo "Backend droplet setup completed. Deploy your Go application to /opt/cgc-backend/"
 echo "Remember to start the service: systemctl start cgc-backend.service"
-`
+`, googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, spacesBucket, spacesEndpoint, valkeyHost, valkeyPort, valkeyPassword)
 }
 
 // getFrontendUserData returns the cloud-init script for the frontend droplet
-func getFrontendUserData() string {
-	return `#!/bin/bash
+func getFrontendUserData(backendPrivateIP string) string {
+	return fmt.Sprintf(`#!/bin/bash
 set -e
 
 # Update system
@@ -331,7 +360,7 @@ server {
 
     # Proxy API requests to backend
     location /api/ {
-        proxy_pass http://BACKEND_IP:8080;
+        proxy_pass http://%s:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -380,5 +409,5 @@ echo "Remember to:"
 echo "1. Update BACKEND_IP in nginx config"
 echo "2. Run: npm install && npm run build"
 echo "3. Start PM2: pm2 start ecosystem.config.js && pm2 save && pm2 startup"
-`
+`, backendPrivateIP)
 }

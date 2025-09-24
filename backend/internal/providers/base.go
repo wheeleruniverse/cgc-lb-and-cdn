@@ -2,18 +2,14 @@ package providers
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"cgc-image-service/internal/models"
-	"github.com/google/uuid"
 )
 
 // BaseProvider provides common functionality for all image generation providers
@@ -114,99 +110,6 @@ func (bp *BaseProvider) RefreshQuota(ctx context.Context) error {
 		}
 	}
 	return nil
-}
-
-// SaveImageFromBase64 saves a base64 encoded image to disk
-func (bp *BaseProvider) SaveImageFromBase64(base64Data, filePrefix string) (*models.GeneratedImage, error) {
-	// Ensure images directory exists
-	if err := os.MkdirAll(bp.imageDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create images directory: %w", err)
-	}
-
-	// Generate unique filename
-	imageID := uuid.New().String()
-	filename := fmt.Sprintf("%s-%s.png", filePrefix, imageID)
-	fullPath := filepath.Join(bp.imageDir, filename)
-
-	// Handle empty base64 data
-	if base64Data == "" {
-		return nil, fmt.Errorf("empty base64 data received")
-	}
-
-	// Remove data URL prefix if present (e.g., "data:image/png;base64,")
-	if strings.Contains(base64Data, ",") {
-		parts := strings.Split(base64Data, ",")
-		if len(parts) > 1 {
-			base64Data = parts[1]
-		}
-	}
-
-	// Decode base64
-	imageData, err := base64.StdEncoding.DecodeString(base64Data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode base64 image (length: %d): %w", len(base64Data), err)
-	}
-
-	// Check if we got any data
-	if len(imageData) == 0 {
-		return nil, fmt.Errorf("decoded image data is empty")
-	}
-
-	// Write to file
-	if err := os.WriteFile(fullPath, imageData, 0644); err != nil {
-		return nil, fmt.Errorf("failed to write image file: %w", err)
-	}
-
-	return &models.GeneratedImage{
-		ID:       imageID,
-		Filename: filename,
-		Path:     fullPath,
-		Size:     int64(len(imageData)),
-	}, nil
-}
-
-// SaveImageFromURL downloads and saves an image from a URL
-func (bp *BaseProvider) SaveImageFromURL(imageURL, filePrefix string) (*models.GeneratedImage, error) {
-	// Ensure images directory exists
-	if err := os.MkdirAll(bp.imageDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create images directory: %w", err)
-	}
-
-	// Download image
-	resp, err := bp.httpClient.Get(imageURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to download image: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to download image: HTTP %d", resp.StatusCode)
-	}
-
-	// Generate unique filename
-	imageID := uuid.New().String()
-	filename := fmt.Sprintf("%s-%s.png", filePrefix, imageID)
-	fullPath := filepath.Join(bp.imageDir, filename)
-
-	// Create file
-	file, err := os.Create(fullPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create image file: %w", err)
-	}
-	defer file.Close()
-
-	// Copy image data
-	size, err := io.Copy(file, resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to save image: %w", err)
-	}
-
-	return &models.GeneratedImage{
-		ID:       imageID,
-		Filename: filename,
-		Path:     fullPath,
-		Size:     size,
-	}, nil
 }
 
 // MakeHTTPRequest is a helper for making HTTP requests with error handling

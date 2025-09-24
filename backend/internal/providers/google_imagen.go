@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -9,6 +10,9 @@ import (
 
 	"cgc-image-service/internal/models"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/google/uuid"
 	"google.golang.org/genai"
 )
@@ -125,27 +129,89 @@ func (gp *GoogleImagenProvider) Generate(ctx context.Context, req *models.ImageR
 	}, nil
 }
 
-// saveImageFromBytes saves image bytes directly to disk
+// saveImageFromBytes saves image bytes directly to either DO Spaces or local disk
 func (gp *GoogleImagenProvider) saveImageFromBytes(imageBytes []byte, filePrefix string) (*models.GeneratedImage, error) {
-	// Ensure images directory exists
-	if err := os.MkdirAll(gp.imageDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create images directory: %w", err)
-	}
-
-	// Generate unique filename
-	imageID := uuid.New().String()
-	filename := fmt.Sprintf("%s-%s.png", filePrefix, imageID)
-	fullPath := filepath.Join(gp.imageDir, filename)
-
-	fmt.Printf("[GOOGLE-IMAGEN] Saving image to: %s (size: %d bytes)\n", filename, len(imageBytes))
-
 	// Check if we got any data
 	if len(imageBytes) == 0 {
 		return nil, fmt.Errorf("image bytes are empty")
 	}
 
+	// Generate unique identifiers
+	imageID := uuid.New().String()
+	filename := fmt.Sprintf("%s-%s.png", filePrefix, imageID)
+
+	fmt.Printf("[GOOGLE-IMAGEN] Saving image: %s (size: %d bytes)\n", filename, len(imageBytes))
+
+	// Check if we should use DO Spaces or local storage
+	useSpaces := os.Getenv("USE_DO_SPACES") == "true"
+
+	if useSpaces {
+		return gp.saveToSpaces(imageBytes, filename, imageID)
+	} else {
+		return gp.saveToLocal(imageBytes, filename, imageID)
+	}
+}
+
+// saveToSpaces uploads image to DigitalOcean Spaces
+func (gp *GoogleImagenProvider) saveToSpaces(imageData []byte, filename, imageID string) (*models.GeneratedImage, error) {
+	// Get DO Spaces configuration
+	bucketName := os.Getenv("DO_SPACES_BUCKET")
+	endpoint := os.Getenv("DO_SPACES_ENDPOINT")
+	accessKey := os.Getenv("DO_SPACES_KEY")
+	secretKey := os.Getenv("DO_SPACES_SECRET")
+
+	if bucketName == "" || endpoint == "" || accessKey == "" || secretKey == "" {
+		return nil, fmt.Errorf("missing DO Spaces configuration")
+	}
+
+	// Create S3-compatible session for DO Spaces
+	sess, err := session.NewSession(&aws.Config{
+		Endpoint:         aws.String(endpoint),
+		Region:           aws.String("nyc3"), // DO Spaces region
+		Credentials:      aws.NewStaticCredentials(accessKey, secretKey, ""),
+		S3ForcePathStyle: aws.Bool(false),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create DO Spaces session: %w", err)
+	}
+
+	s3Client := s3.New(sess)
+
+	// Upload to Spaces
+	_, err = s3Client.PutObject(&s3.PutObjectInput{
+		Bucket:        aws.String(bucketName),
+		Key:           aws.String(filename),
+		Body:          bytes.NewReader(imageData),
+		ContentType:   aws.String("image/png"),
+		ContentLength: aws.Int64(int64(len(imageData))),
+		ACL:           aws.String("public-read"),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to upload to DO Spaces: %w", err)
+	}
+
+	// Construct public URL
+	publicURL := fmt.Sprintf("https://%s.%s/%s", bucketName, endpoint, filename)
+
+	return &models.GeneratedImage{
+		ID:       imageID,
+		Filename: filename,
+		Path:     publicURL,
+		Size:     int64(len(imageData)),
+	}, nil
+}
+
+// saveToLocal saves image to local disk
+func (gp *GoogleImagenProvider) saveToLocal(imageData []byte, filename, imageID string) (*models.GeneratedImage, error) {
+	// Ensure images directory exists
+	if err := os.MkdirAll(gp.imageDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create images directory: %w", err)
+	}
+
+	fullPath := filepath.Join(gp.imageDir, filename)
+
 	// Write to file
-	if err := os.WriteFile(fullPath, imageBytes, 0644); err != nil {
+	if err := os.WriteFile(fullPath, imageData, 0644); err != nil {
 		return nil, fmt.Errorf("failed to write image file: %w", err)
 	}
 
@@ -153,6 +219,6 @@ func (gp *GoogleImagenProvider) saveImageFromBytes(imageBytes []byte, filePrefix
 		ID:       imageID,
 		Filename: filename,
 		Path:     fullPath,
-		Size:     int64(len(imageBytes)),
+		Size:     int64(len(imageData)),
 	}, nil
 }
