@@ -201,10 +201,9 @@ func main() {
 				},
 			},
 
-			// Apply to specific droplets instead of tags
-			DropletIds: pulumi.IntArray{
-				backendDroplet.ID().ToIntOutput(),
-				frontendDroplet.ID().ToIntOutput(),
+			// Apply to droplets by tag (with explicit dependency to ensure droplets exist first)
+			Tags: pulumi.StringArray{
+				pulumi.String("cgc"),
 			},
 		}, pulumi.DependsOn([]pulumi.Resource{backendDroplet, frontendDroplet}))
 		if err != nil {
