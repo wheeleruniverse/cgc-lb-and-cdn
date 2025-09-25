@@ -36,7 +36,7 @@ jobs:
       run: |
         mkdir -p bin
         go mod download
-        go build -o bin/cgc-hosting .
+        go build -o bin/cgc-lb-and-cdn .
 
     - name: Destroy infrastructure
       working-directory: hosting
@@ -48,7 +48,7 @@ jobs:
         pulumi destroy --yes || true
 
         # If VPC deletion failed (expected), remove it from state
-        if pulumi state delete "urn:pulumi:dev::cgc-hosting::digitalocean:index/vpc:Vpc::cgc-vpc" 2>/dev/null; then
+        if pulumi state delete "urn:pulumi:dev::cgc-lb-and-cdn::digitalocean:index/vpc:Vpc::cgc-lb-and-cdn-vpc" 2>/dev/null; then
           echo "🔧 Removed VPC from Pulumi state (VPC cannot be deleted - this is normal)" >> $GITHUB_STEP_SUMMARY
         fi
 
@@ -56,7 +56,7 @@ jobs:
         echo "💰 Monthly cost savings: ~$39/month" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 📋 Manual Cleanup (if needed)" >> $GITHUB_STEP_SUMMARY
-        echo "- Delete DO Spaces bucket 'cgc-generated-content' if created manually" >> $GITHUB_STEP_SUMMARY
+        echo "- Delete DO Spaces bucket 'cgc-lb-and-cdn-content' if created manually" >> $GITHUB_STEP_SUMMARY
         echo "- VPC remains (cannot be deleted - this is normal and free)" >> $GITHUB_STEP_SUMMARY
         echo "- Remove unused GitHub secrets if desired" >> $GITHUB_STEP_SUMMARY
       env:

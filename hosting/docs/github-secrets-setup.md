@@ -43,7 +43,7 @@ pulumi login
 
 ### 3. Digital Ocean Services (Automatic)
 Your infrastructure will automatically create and configure:
-- **Digital Ocean Spaces**: Object storage for generated content
+- **Digital Ocean Spaces**: Object storage bucket named `cgc-lb-and-cdn-content` for generated images
 - **Valkey Database**: Managed in-memory database for caching user votes
 - **VPC and Networking**: Private network for secure service communication
 

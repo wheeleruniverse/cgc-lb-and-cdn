@@ -25,12 +25,12 @@ func main() {
 
 		// Note: Spaces bucket creation requires separate Spaces credentials
 		// For now, we'll create a placeholder and configure Spaces manually
-		spaceBucketName := "cgc-generated-content"
+		spaceBucketName := "cgc-lb-and-cdn-content"
 		spaceBucketEndpoint := "nyc3.digitaloceanspaces.com"
 
 		// Create VPC for the project
-		vpc, err := digitalocean.NewVpc(ctx, "cgc-vpc", &digitalocean.VpcArgs{
-			Name:    pulumi.String("cgc-vpc"),
+		vpc, err := digitalocean.NewVpc(ctx, "cgc-lb-and-cdn-vpc", &digitalocean.VpcArgs{
+			Name:    pulumi.String("cgc-lb-and-cdn-vpc"),
 			Region:  pulumi.String("nyc3"),
 			IpRange: pulumi.String("10.10.0.0/16"),
 		})
@@ -39,8 +39,8 @@ func main() {
 		}
 
 		// Create Valkey managed database cluster for caching user votes
-		valkeyCluster, err := digitalocean.NewDatabaseCluster(ctx, "cgc-valkey-cluster", &digitalocean.DatabaseClusterArgs{
-			Name:               pulumi.String("cgc-valkey-cluster"),
+		valkeyCluster, err := digitalocean.NewDatabaseCluster(ctx, "cgc-lb-and-cdn-valkey", &digitalocean.DatabaseClusterArgs{
+			Name:               pulumi.String("cgc-lb-and-cdn-valkey"),
 			Engine:             pulumi.String("valkey"),
 			Version:            pulumi.String("8"),
 			Size:               pulumi.String("db-s-1vcpu-1gb"), // Small cluster for development
@@ -54,8 +54,8 @@ func main() {
 		}
 
 		// Backend droplet for Go API server
-		backendDroplet, err := digitalocean.NewDroplet(ctx, "cgc-backend", &digitalocean.DropletArgs{
-			Name:    pulumi.String("cgc-backend"),
+		backendDroplet, err := digitalocean.NewDroplet(ctx, "cgc-lb-and-cdn-backend", &digitalocean.DropletArgs{
+			Name:    pulumi.String("cgc-lb-and-cdn-backend"),
 			Image:   pulumi.String("ubuntu-22-04-x64"),
 			Size:    pulumi.String("s-1vcpu-1gb"),
 			Region:  pulumi.String("nyc3"),
@@ -70,8 +70,8 @@ func main() {
 		}
 
 		// Frontend droplet for Next.js application
-		frontendDroplet, err := digitalocean.NewDroplet(ctx, "cgc-frontend", &digitalocean.DropletArgs{
-			Name:    pulumi.String("cgc-frontend"),
+		frontendDroplet, err := digitalocean.NewDroplet(ctx, "cgc-lb-and-cdn-frontend", &digitalocean.DropletArgs{
+			Name:    pulumi.String("cgc-lb-and-cdn-frontend"),
 			Image:   pulumi.String("ubuntu-22-04-x64"),
 			Size:    pulumi.String("s-1vcpu-1gb"),
 			Region:  pulumi.String("nyc3"),
@@ -86,8 +86,8 @@ func main() {
 		}
 
 		// Load balancer to distribute traffic
-		loadBalancer, err := digitalocean.NewLoadBalancer(ctx, "cgc-load-balancer", &digitalocean.LoadBalancerArgs{
-			Name:   pulumi.String("cgc-load-balancer"),
+		loadBalancer, err := digitalocean.NewLoadBalancer(ctx, "cgc-lb-and-cdn-lb", &digitalocean.LoadBalancerArgs{
+			Name:   pulumi.String("cgc-lb-and-cdn-lb"),
 			Region: pulumi.String("nyc3"),
 			Size:   pulumi.String("lb-small"),
 
@@ -127,8 +127,8 @@ func main() {
 		}
 
 		// Create firewall rules (depends on droplets being created first)
-		firewall, err := digitalocean.NewFirewall(ctx, "cgc-firewall", &digitalocean.FirewallArgs{
-			Name: pulumi.String("cgc-firewall"),
+		firewall, err := digitalocean.NewFirewall(ctx, "cgc-lb-and-cdn-firewall", &digitalocean.FirewallArgs{
+			Name: pulumi.String("cgc-lb-and-cdn-firewall"),
 
 			// Inbound rules
 			InboundRules: digitalocean.FirewallInboundRuleArray{

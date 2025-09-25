@@ -1,8 +1,8 @@
-name: cgc-hosting
+name: cgc-lb-and-cdn
 runtime: go
 description: Digital Ocean infrastructure for CGC Load Balancing and CDN project
 
 config:
-  cgc-hosting:domain:
+  cgc-lb-and-cdn:domain:
     description: Domain name for the application
     value: ""

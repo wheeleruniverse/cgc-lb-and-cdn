@@ -115,7 +115,7 @@ If you have a custom domain:
 - **Storage**: 25GB SSD
 
 ### DO Spaces Storage
-- **Name**: cgc-generated-content
+- **Name**: cgc-lb-and-cdn-content
 - **Region**: nyc3
 - **ACL**: public-read
 - **CDN**: Built-in CDN enabled

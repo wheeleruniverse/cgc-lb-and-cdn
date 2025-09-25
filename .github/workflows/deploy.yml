@@ -31,7 +31,7 @@ jobs:
       run: |
         mkdir -p bin
         go mod download
-        go build -o bin/cgc-hosting .
+        go build -o bin/cgc-lb-and-cdn .
 
     - name: Deploy infrastructure
       working-directory: hosting
@@ -39,12 +39,12 @@ jobs:
         pulumi stack select dev --create
 
         # Configure API keys as Pulumi secrets
-        pulumi config set --secret cgc-hosting:google_api_key "${{ secrets.GOOGLE_API_KEY }}"
-        pulumi config set --secret cgc-hosting:leonardo_api_key "${{ secrets.LEONARDO_API_KEY }}"
-        pulumi config set --secret cgc-hosting:freepik_api_key "${{ secrets.FREEPIK_API_KEY }}"
+        pulumi config set --secret cgc-lb-and-cdn:google_api_key "${{ secrets.GOOGLE_API_KEY }}"
+        pulumi config set --secret cgc-lb-and-cdn:leonardo_api_key "${{ secrets.LEONARDO_API_KEY }}"
+        pulumi config set --secret cgc-lb-and-cdn:freepik_api_key "${{ secrets.FREEPIK_API_KEY }}"
 
         # Configure storage settings
-        pulumi config set cgc-hosting:use_do_spaces "true"
+        pulumi config set cgc-lb-and-cdn:use_do_spaces "true"
 
         pulumi up --yes
       env:
