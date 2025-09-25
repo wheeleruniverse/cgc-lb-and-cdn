@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/pulumi/pulumi-digitalocean/sdk/v4/go/digitalocean"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -38,7 +39,7 @@ func main() {
 			return err
 		}
 
-		// Create Valkey managed database cluster for caching user votes
+		// Create Valkey managed database cluster for caching user votes (VPC private only)
 		valkeyCluster, err := digitalocean.NewDatabaseCluster(ctx, "cgc-lb-and-cdn-valkey", &digitalocean.DatabaseClusterArgs{
 			Name:               pulumi.String("cgc-lb-and-cdn-valkey"),
 			Engine:             pulumi.String("valkey"),
@@ -53,15 +54,15 @@ func main() {
 			return err
 		}
 
-		// Backend droplet for Go API server
-		backendDroplet, err := digitalocean.NewDroplet(ctx, "cgc-lb-and-cdn-backend", &digitalocean.DropletArgs{
-			Name:    pulumi.String("cgc-lb-and-cdn-backend"),
+		// Droplet 1 - runs both backend and frontend applications
+		droplet1, err := digitalocean.NewDroplet(ctx, "cgc-lb-and-cdn-droplet-1", &digitalocean.DropletArgs{
+			Name:    pulumi.String("cgc-lb-and-cdn-droplet-1"),
 			Image:   pulumi.String("ubuntu-22-04-x64"),
 			Size:    pulumi.String("s-1vcpu-1gb"),
 			Region:  pulumi.String("nyc3"),
 			VpcUuid: vpc.ID(),
 			UserData: pulumi.All(valkeyCluster.Host, valkeyCluster.Port, valkeyCluster.Password).ApplyT(func(args []interface{}) string {
-				return getBackendUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, spaceBucketName, spaceBucketEndpoint, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string))
+				return getFullStackUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, spaceBucketName, spaceBucketEndpoint, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string))
 			}).(pulumi.StringOutput),
 			// Tags removed due to permission issues
 		})
@@ -69,15 +70,15 @@ func main() {
 			return err
 		}
 
-		// Frontend droplet for Next.js application
-		frontendDroplet, err := digitalocean.NewDroplet(ctx, "cgc-lb-and-cdn-frontend", &digitalocean.DropletArgs{
-			Name:    pulumi.String("cgc-lb-and-cdn-frontend"),
+		// Droplet 2 - runs both backend and frontend applications
+		droplet2, err := digitalocean.NewDroplet(ctx, "cgc-lb-and-cdn-droplet-2", &digitalocean.DropletArgs{
+			Name:    pulumi.String("cgc-lb-and-cdn-droplet-2"),
 			Image:   pulumi.String("ubuntu-22-04-x64"),
 			Size:    pulumi.String("s-1vcpu-1gb"),
 			Region:  pulumi.String("nyc3"),
 			VpcUuid: vpc.ID(),
-			UserData: backendDroplet.Ipv4AddressPrivate.ApplyT(func(ip string) string {
-				return getFrontendUserData(ip)
+			UserData: pulumi.All(valkeyCluster.Host, valkeyCluster.Port, valkeyCluster.Password).ApplyT(func(args []interface{}) string {
+				return getFullStackUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, spaceBucketName, spaceBucketEndpoint, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string))
 			}).(pulumi.StringOutput),
 			// Tags removed due to permission issues
 		})
@@ -85,13 +86,25 @@ func main() {
 			return err
 		}
 
-		// Load balancer to distribute traffic
+		// Load balancer to distribute traffic between both droplets
 		loadBalancer, err := digitalocean.NewLoadBalancer(ctx, "cgc-lb-and-cdn-lb", &digitalocean.LoadBalancerArgs{
 			Name:   pulumi.String("cgc-lb-and-cdn-lb"),
 			Region: pulumi.String("nyc3"),
 			Size:   pulumi.String("lb-small"),
 
-			// Forward HTTP traffic to backend
+			// Connect to both droplets
+			DropletIds: pulumi.IntArray{
+				droplet1.ID().ApplyT(func(id string) (int, error) {
+					// Pulumi's ID is a string, so we need to parse it to an integer.
+					// A Droplet's ID is guaranteed to be a string representation of an integer.
+					return strconv.Atoi(id)
+				}).(pulumi.IntOutput),
+				droplet2.ID().ApplyT(func(id string) (int, error) {
+					return strconv.Atoi(id)
+				}).(pulumi.IntOutput),
+			},
+
+			// Forward HTTP traffic to backend API on port 8080
 			ForwardingRules: digitalocean.LoadBalancerForwardingRuleArray{
 				// API traffic to backend
 				&digitalocean.LoadBalancerForwardingRuleArgs{
@@ -119,8 +132,6 @@ func main() {
 				CookieName:       pulumi.String("lb"),
 				CookieTtlSeconds: pulumi.Int(300),
 			},
-
-			// Droplet tag removed - will need to manually assign droplets to load balancer
 		})
 		if err != nil {
 			return err
@@ -196,16 +207,26 @@ func main() {
 				},
 			},
 
-			// Firewall rules will apply broadly - specific droplet targeting removed due to tag permissions
-		}, pulumi.DependsOn([]pulumi.Resource{backendDroplet, frontendDroplet}))
+			// Associate firewall with both droplets
+			DropletIds: pulumi.IntArray{
+				droplet1.ID().ApplyT(func(id string) (int, error) {
+					// Pulumi's ID is a string, so we need to parse it to an integer.
+					// A Droplet's ID is guaranteed to be a string representation of an integer.
+					return strconv.Atoi(id)
+				}).(pulumi.IntOutput),
+				droplet2.ID().ApplyT(func(id string) (int, error) {
+					return strconv.Atoi(id)
+				}).(pulumi.IntOutput),
+			},
+		}, pulumi.DependsOn([]pulumi.Resource{droplet1, droplet2}))
 		if err != nil {
 			return err
 		}
 
 		// Export important information
 		ctx.Export("loadBalancerIp", loadBalancer.Ip)
-		ctx.Export("backendDropletIp", backendDroplet.Ipv4Address)
-		ctx.Export("frontendDropletIp", frontendDroplet.Ipv4Address)
+		ctx.Export("droplet1Ip", droplet1.Ipv4Address)
+		ctx.Export("droplet2Ip", droplet2.Ipv4Address)
 		ctx.Export("spacesBucketName", pulumi.String(spaceBucketName))
 		ctx.Export("spacesBucketEndpoint", pulumi.String(spaceBucketEndpoint))
 		ctx.Export("spacesCdnEndpoint", pulumi.String("https://"+spaceBucketName+"."+spaceBucketEndpoint))
@@ -220,8 +241,8 @@ func main() {
 	})
 }
 
-// getBackendUserData returns the cloud-init script for the backend droplet
-func getBackendUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, spacesBucket, spacesEndpoint, valkeyHost, valkeyPort, valkeyPassword string) string {
+// getFullStackUserData returns cloud-init script to deploy both backend and frontend on each droplet
+func getFullStackUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, spacesBucket, spacesEndpoint, valkeyHost, valkeyPort, valkeyPassword string) string {
 	return fmt.Sprintf(`#!/bin/bash
 set -e
 
@@ -230,7 +251,7 @@ apt-get update -y
 apt-get upgrade -y
 
 # Install required packages
-apt-get install -y curl wget git build-essential
+apt-get install -y curl wget git build-essential nginx
 
 # Install Go 1.21
 cd /tmp
@@ -240,7 +261,18 @@ echo 'export PATH=$PATH:/usr/local/go/bin' >> /etc/profile
 echo 'export GOPATH=/opt/go' >> /etc/profile
 echo 'export PATH=$PATH:/opt/go/bin' >> /etc/profile
 
-# Create app directory
+# Install Node.js 18
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+apt-get install -y nodejs
+
+# Install PM2 for process management
+npm install -g pm2
+
+# ===================
+# BACKEND SETUP
+# ===================
+
+# Create backend app directory
 mkdir -p /opt/cgc-backend
 cd /opt/cgc-backend
 
@@ -259,7 +291,7 @@ DO_VALKEY_PORT=%s
 DO_VALKEY_PASSWORD=%s
 ENVEOF
 
-# Create systemd service file
+# Create systemd service file for backend
 cat > /etc/systemd/system/cgc-backend.service << 'EOF'
 [Unit]
 Description=CGC Backend Service
@@ -279,41 +311,19 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF
 
-# Enable the service
+# Enable backend service
 systemctl enable cgc-backend.service
 
-# Note: The actual application deployment will need to be done separately
-# This could be done via CI/CD pipeline or manual deployment
-echo "Backend droplet setup completed. Deploy your Go application to /opt/cgc-backend/"
-echo "Remember to start the service: systemctl start cgc-backend.service"
-`, googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, spacesBucket, spacesEndpoint, valkeyHost, valkeyPort, valkeyPassword)
-}
+# ===================
+# FRONTEND SETUP
+# ===================
 
-// getFrontendUserData returns the cloud-init script for the frontend droplet
-func getFrontendUserData(backendPrivateIP string) string {
-	return fmt.Sprintf(`#!/bin/bash
-set -e
-
-# Update system
-apt-get update -y
-apt-get upgrade -y
-
-# Install required packages
-apt-get install -y curl wget git nginx
-
-# Install Node.js 18
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-apt-get install -y nodejs
-
-# Install PM2 for process management
-npm install -g pm2
-
-# Create app directory
+# Create frontend app directory
 mkdir -p /opt/cgc-frontend
 cd /opt/cgc-frontend
 
 # Configure Nginx as reverse proxy
-cat > /etc/nginx/sites-available/cgc-frontend << 'EOF'
+cat > /etc/nginx/sites-available/cgc-frontend << 'NGINXEOF'
 server {
     listen 80;
     server_name _;
@@ -325,9 +335,9 @@ server {
         access_log off;
     }
 
-    # Proxy API requests to backend
+    # Proxy API requests to local backend
     location /api/ {
-        proxy_pass http://%s:8080;
+        proxy_pass http://localhost:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -343,14 +353,14 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
-EOF
+NGINXEOF
 
 # Enable the site
 ln -sf /etc/nginx/sites-available/cgc-frontend /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 
-# Create PM2 ecosystem file
-cat > /opt/cgc-frontend/ecosystem.config.js << 'EOF'
+# Create PM2 ecosystem file for frontend
+cat > /opt/cgc-frontend/ecosystem.config.js << 'PM2EOF'
 module.exports = {
   apps: [{
     name: 'cgc-frontend',
@@ -363,18 +373,30 @@ module.exports = {
     }
   }]
 }
-EOF
+PM2EOF
 
 # Enable services
 systemctl enable nginx
 systemctl start nginx
 
-# Note: The actual application deployment will need to be done separately
-# This could be done via CI/CD pipeline or manual deployment
-echo "Frontend droplet setup completed. Deploy your Next.js application to /opt/cgc-frontend/"
-echo "Remember to:"
-echo "1. Update BACKEND_IP in nginx config"
-echo "2. Run: npm install && npm run build"
-echo "3. Start PM2: pm2 start ecosystem.config.js && pm2 save && pm2 startup"
-`, backendPrivateIP)
+# ===================
+# DEPLOYMENT NOTES
+# ===================
+
+echo "Full-stack droplet setup completed!"
+echo ""
+echo "Backend deployment:"
+echo "  - Deploy Go application to /opt/cgc-backend/"
+echo "  - Start service: systemctl start cgc-backend.service"
+echo ""
+echo "Frontend deployment:"
+echo "  - Deploy Next.js application to /opt/cgc-frontend/"
+echo "  - Run: npm install && npm run build"
+echo "  - Start PM2: pm2 start ecosystem.config.js && pm2 save && pm2 startup"
+echo ""
+echo "Both applications will run on this droplet:"
+echo "  - Backend API: localhost:8080"
+echo "  - Frontend: localhost:3000"
+echo "  - Nginx proxy: port 80"
+`, googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, spacesBucket, spacesEndpoint, valkeyHost, valkeyPort, valkeyPassword)
 }

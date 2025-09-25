@@ -59,13 +59,13 @@ jobs:
         echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
         pulumi stack output loadBalancerIp >> $GITHUB_STEP_SUMMARY
         echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-        echo "### Backend Droplet IP" >> $GITHUB_STEP_SUMMARY
+        echo "### Droplet 1 IP (Full-Stack)" >> $GITHUB_STEP_SUMMARY
         echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-        pulumi stack output backendDropletIp >> $GITHUB_STEP_SUMMARY
+        pulumi stack output droplet1Ip >> $GITHUB_STEP_SUMMARY
         echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-        echo "### Frontend Droplet IP" >> $GITHUB_STEP_SUMMARY
+        echo "### Droplet 2 IP (Full-Stack)" >> $GITHUB_STEP_SUMMARY
         echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-        pulumi stack output frontendDropletIp >> $GITHUB_STEP_SUMMARY
+        pulumi stack output droplet2Ip >> $GITHUB_STEP_SUMMARY
         echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
         echo "### Valkey Database" >> $GITHUB_STEP_SUMMARY
         echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
