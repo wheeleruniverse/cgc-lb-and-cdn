@@ -67,7 +67,7 @@ Explore individual AI image generation providers and their capabilities:
 | **Freepik** | ✅ Integrated | Official API, $5 free credit, sync generation | [📖 Guide](research/freepik/README.md) |
 | **Google Imagen** | ✅ Integrated | High-quality Imagen 3.0, Vertex AI | [📖 Guide](research/google-imagen/README.md) |
 | **Leonardo AI** | ✅ Integrated | Creative models, async generation, free tier | [📖 Guide](research/leonardo-ai/README.md) |
-| **Craiyon** | ✅ Integrated | Free unlimited generations | [📖 Guide](research/craiyon/README.md) |
+| **Craiyon** | ❌ Broken | Cloudflare protection blocks API access | [📖 Guide](research/craiyon/README.md) |
 
 ## 🎯 Key Features
 
