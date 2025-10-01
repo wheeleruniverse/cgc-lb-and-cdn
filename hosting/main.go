@@ -88,9 +88,10 @@ func main() {
 
 		// Load balancer to distribute traffic between both droplets
 		loadBalancer, err := digitalocean.NewLoadBalancer(ctx, "cgc-lb-and-cdn-lb", &digitalocean.LoadBalancerArgs{
-			Name:   pulumi.String("cgc-lb-and-cdn-lb"),
-			Region: pulumi.String("nyc3"),
-			Size:   pulumi.String("lb-small"),
+			Name:    pulumi.String("cgc-lb-and-cdn-lb"),
+			Region:  pulumi.String("nyc3"),
+			Size:    pulumi.String("lb-small"),
+			VpcUuid: vpc.ID(),
 
 			// Connect to both droplets
 			DropletIds: pulumi.IntArray{
