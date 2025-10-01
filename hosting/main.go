@@ -274,11 +274,11 @@ npm install -g pm2
 # ===================
 
 # Create backend app directory
-mkdir -p /opt/cgc-backend
-cd /opt/cgc-backend
+mkdir -p /opt/cgc-lb-and-cdn-backend
+cd /opt/cgc-lb-and-cdn-backend
 
 # Create environment file for the backend service
-cat > /opt/cgc-backend/.env << 'ENVEOF'
+cat > /opt/cgc-lb-and-cdn-backend/.env << 'ENVEOF'
 PORT=8080
 HOST=0.0.0.0
 GOOGLE_API_KEY=%s
@@ -293,18 +293,18 @@ DO_VALKEY_PASSWORD=%s
 ENVEOF
 
 # Create systemd service file for backend
-cat > /etc/systemd/system/cgc-backend.service << 'EOF'
+cat > /etc/systemd/system/cgc-lb-and-cdn-backend.service << 'EOF'
 [Unit]
-Description=CGC Backend Service
+Description=CGC Load Balancer and CDN Backend Service
 After=network.target
 
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/cgc-backend
+WorkingDirectory=/opt/cgc-lb-and-cdn-backend
 Environment=PATH=/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-EnvironmentFile=/opt/cgc-backend/.env
-ExecStart=/opt/cgc-backend/server
+EnvironmentFile=/opt/cgc-lb-and-cdn-backend/.env
+ExecStart=/opt/cgc-lb-and-cdn-backend/server
 Restart=always
 RestartSec=10
 
@@ -313,25 +313,39 @@ WantedBy=multi-user.target
 EOF
 
 # Enable backend service
-systemctl enable cgc-backend.service
+systemctl enable cgc-lb-and-cdn-backend.service
+
+# Clone repository and deploy backend
+cd /opt/cgc-lb-and-cdn-backend
+git clone https://github.com/wheeleruniverse/cgc-lb-and-cdn.git repo
+cp -r repo/backend/* .
+rm -rf repo
+
+# Build and start backend
+export PATH=$PATH:/usr/local/go/bin
+export GOPATH=/opt/go
+cd /opt/cgc-lb-and-cdn-backend
+go mod download
+go build -o server ./cmd/server
+systemctl start cgc-lb-and-cdn-backend.service
 
 # ===================
 # FRONTEND SETUP
 # ===================
 
 # Create frontend app directory
-mkdir -p /opt/cgc-frontend
-cd /opt/cgc-frontend
+mkdir -p /opt/cgc-lb-and-cdn-frontend
+cd /opt/cgc-lb-and-cdn-frontend
 
 # Configure Nginx as reverse proxy
-cat > /etc/nginx/sites-available/cgc-frontend << 'NGINXEOF'
+cat > /etc/nginx/sites-available/cgc-lb-and-cdn-frontend << 'NGINXEOF'
 server {
     listen 80;
     server_name _;
 
     # Serve static files directly
     location /_next/static/ {
-        alias /opt/cgc-frontend/.next/static/;
+        alias /opt/cgc-lb-and-cdn-frontend/.next/static/;
         expires 1y;
         access_log off;
     }
@@ -357,17 +371,17 @@ server {
 NGINXEOF
 
 # Enable the site
-ln -sf /etc/nginx/sites-available/cgc-frontend /etc/nginx/sites-enabled/
+ln -sf /etc/nginx/sites-available/cgc-lb-and-cdn-frontend /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 
 # Create PM2 ecosystem file for frontend
-cat > /opt/cgc-frontend/ecosystem.config.js << 'PM2EOF'
+cat > /opt/cgc-lb-and-cdn-frontend/ecosystem.config.js << 'PM2EOF'
 module.exports = {
   apps: [{
-    name: 'cgc-frontend',
+    name: 'cgc-lb-and-cdn-frontend',
     script: 'npm',
     args: 'start',
-    cwd: '/opt/cgc-frontend',
+    cwd: '/opt/cgc-lb-and-cdn-frontend',
     env: {
       NODE_ENV: 'production',
       PORT: 3000
@@ -376,28 +390,31 @@ module.exports = {
 }
 PM2EOF
 
-# Enable services
+# Enable and start nginx
 systemctl enable nginx
 systemctl start nginx
 
+# Clone repository and deploy frontend
+cd /opt/cgc-lb-and-cdn-frontend
+git clone https://github.com/wheeleruniverse/cgc-lb-and-cdn.git repo
+cp -r repo/frontend/* .
+rm -rf repo
+
+# Build and start frontend
+npm install
+npm run build
+pm2 start ecosystem.config.js
+pm2 save
+pm2 startup systemd -u root --hp /root
+env PATH=$PATH:/usr/bin pm2 startup systemd -u root --hp /root | tail -n 1 | bash
+
 # ===================
-# DEPLOYMENT NOTES
+# DEPLOYMENT COMPLETE
 # ===================
 
-echo "Full-stack droplet setup completed!"
-echo ""
-echo "Backend deployment:"
-echo "  - Deploy Go application to /opt/cgc-backend/"
-echo "  - Start service: systemctl start cgc-backend.service"
-echo ""
-echo "Frontend deployment:"
-echo "  - Deploy Next.js application to /opt/cgc-frontend/"
-echo "  - Run: npm install && npm run build"
-echo "  - Start PM2: pm2 start ecosystem.config.js && pm2 save && pm2 startup"
-echo ""
-echo "Both applications will run on this droplet:"
-echo "  - Backend API: localhost:8080"
-echo "  - Frontend: localhost:3000"
-echo "  - Nginx proxy: port 80"
+echo "Full-stack droplet deployment completed!"
+echo "Backend API running on localhost:8080"
+echo "Frontend running on localhost:3000"
+echo "Nginx proxy running on port 80"
 `, googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, spacesBucket, spacesEndpoint, valkeyHost, valkeyPort, valkeyPassword)
 }
