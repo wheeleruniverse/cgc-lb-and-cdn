@@ -33,7 +33,7 @@ func main() {
 		vpc, err := digitalocean.NewVpc(ctx, "cgc-lb-and-cdn-vpc", &digitalocean.VpcArgs{
 			Name:    pulumi.String("cgc-lb-and-cdn-vpc"),
 			Region:  pulumi.String("nyc3"),
-			IpRange: pulumi.String("10.10.0.0/16"),
+			IpRange: pulumi.String("10.20.0.0/24"),
 		})
 		if err != nil {
 			return err
@@ -166,7 +166,7 @@ func main() {
 					Protocol:  pulumi.String("tcp"),
 					PortRange: pulumi.String("8080"),
 					SourceAddresses: pulumi.StringArray{
-						pulumi.String("10.10.0.0/16"), // VPC only
+						pulumi.String("10.20.0.0/24"), // VPC only
 					},
 				},
 				// Frontend Next.js port
@@ -174,7 +174,7 @@ func main() {
 					Protocol:  pulumi.String("tcp"),
 					PortRange: pulumi.String("3000"),
 					SourceAddresses: pulumi.StringArray{
-						pulumi.String("10.10.0.0/16"), // VPC only
+						pulumi.String("10.20.0.0/24"), // VPC only
 					},
 				},
 				// Valkey database port (internal VPC access only)
@@ -182,7 +182,7 @@ func main() {
 					Protocol:  pulumi.String("tcp"),
 					PortRange: pulumi.String("25061"), // Standard Valkey port in DO
 					SourceAddresses: pulumi.StringArray{
-						pulumi.String("10.10.0.0/16"), // VPC only
+						pulumi.String("10.20.0.0/24"), // VPC only
 					},
 				},
 			},
