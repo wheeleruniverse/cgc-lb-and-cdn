@@ -13,7 +13,10 @@ func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
 		// Load configuration
 		cfg := config.New(ctx, "")
-		_ = cfg.Get("domain") // Domain configuration for future SSL setup
+		domain := cfg.Get("domain")
+		if domain == "" {
+			domain = "wheeleraiduel.online" // Default domain
+		}
 
 		// Get API keys from Pulumi config (passed from GitHub Actions)
 		googleAPIKey := cfg.Get("google_api_key")
@@ -24,10 +27,33 @@ func main() {
 			useDoSpaces = "false" // Default to local storage
 		}
 
-		// Note: Spaces bucket creation requires separate Spaces credentials
-		// For now, we'll create a placeholder and configure Spaces manually
+		// Get Spaces credentials from Pulumi config
+		spacesAccessKey := cfg.Get("do_spaces_access_key")
+		spacesSecretKey := cfg.Get("do_spaces_secret_key")
+
+		// Note: In GitHub Actions, these should be passed as:
+		// --config do_spaces_access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}
+		// --config do_spaces_secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}
+
+		// Create Spaces bucket for storing generated images and logs
 		spaceBucketName := "cgc-lb-and-cdn-content"
 		spaceBucketEndpoint := "nyc3.digitaloceanspaces.com"
+		spaceBucket, err := digitalocean.NewSpacesBucket(ctx, "cgc-lb-and-cdn-spaces", &digitalocean.SpacesBucketArgs{
+			Name:   pulumi.String(spaceBucketName),
+			Region: pulumi.String("nyc3"),
+			Acl:    pulumi.String("public-read"), // Public read for CDN access
+		})
+		if err != nil {
+			return err
+		}
+
+		// Enable CDN on the Spaces bucket
+		_, err = digitalocean.NewCdn(ctx, "cgc-lb-and-cdn-cdn", &digitalocean.CdnArgs{
+			Origin: spaceBucket.BucketDomainName,
+		})
+		if err != nil {
+			return err
+		}
 
 		// Create VPC for the project
 		vpc, err := digitalocean.NewVpc(ctx, "cgc-lb-and-cdn-vpc", &digitalocean.VpcArgs{
@@ -61,8 +87,8 @@ func main() {
 			Size:    pulumi.String("s-1vcpu-1gb"),
 			Region:  pulumi.String("nyc3"),
 			VpcUuid: vpc.ID(),
-			UserData: pulumi.All(valkeyCluster.Host, valkeyCluster.Port, valkeyCluster.Password).ApplyT(func(args []interface{}) string {
-				return getFullStackUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, spaceBucketName, spaceBucketEndpoint, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string))
+			UserData: pulumi.All(valkeyCluster.Host, valkeyCluster.Port, valkeyCluster.Password, spaceBucket.Name, spaceBucket.Region).ApplyT(func(args []interface{}) string {
+				return getFullStackUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, args[3].(string), spaceBucketEndpoint, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string), spacesAccessKey, spacesSecretKey)
 			}).(pulumi.StringOutput),
 			// Tags removed due to permission issues
 		})
@@ -77,11 +103,32 @@ func main() {
 			Size:    pulumi.String("s-1vcpu-1gb"),
 			Region:  pulumi.String("nyc3"),
 			VpcUuid: vpc.ID(),
-			UserData: pulumi.All(valkeyCluster.Host, valkeyCluster.Port, valkeyCluster.Password).ApplyT(func(args []interface{}) string {
-				return getFullStackUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, spaceBucketName, spaceBucketEndpoint, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string))
+			UserData: pulumi.All(valkeyCluster.Host, valkeyCluster.Port, valkeyCluster.Password, spaceBucket.Name, spaceBucket.Region).ApplyT(func(args []interface{}) string {
+				return getFullStackUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, args[3].(string), spaceBucketEndpoint, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string), spacesAccessKey, spacesSecretKey)
 			}).(pulumi.StringOutput),
 			// Tags removed due to permission issues
 		})
+		if err != nil {
+			return err
+		}
+
+		// Create domain in DigitalOcean first (needed for Let's Encrypt verification)
+		doDomain, err := digitalocean.NewDomain(ctx, "cgc-lb-and-cdn-domain", &digitalocean.DomainArgs{
+			Name: pulumi.String(domain),
+		})
+		if err != nil {
+			return err
+		}
+
+		// Create Let's Encrypt certificate for the domain (after domain is added)
+		certificate, err := digitalocean.NewCertificate(ctx, "cgc-lb-and-cdn-cert", &digitalocean.CertificateArgs{
+			Name:    pulumi.String("cgc-lb-and-cdn-cert"),
+			Type:    pulumi.String("lets_encrypt"),
+			Domains: pulumi.StringArray{
+				pulumi.String(domain),
+				pulumi.String("www." + domain),
+			},
+		}, pulumi.DependsOn([]pulumi.Resource{doDomain}))
 		if err != nil {
 			return err
 		}
@@ -105,14 +152,22 @@ func main() {
 				}).(pulumi.IntOutput),
 			},
 
-			// Forward HTTP traffic to backend API on port 8080
+			// Forward traffic to backend API on port 8080
 			ForwardingRules: digitalocean.LoadBalancerForwardingRuleArray{
-				// API traffic to backend
+				// HTTP traffic (will redirect to HTTPS)
 				&digitalocean.LoadBalancerForwardingRuleArgs{
 					EntryProtocol:  pulumi.String("http"),
 					EntryPort:      pulumi.Int(80),
 					TargetProtocol: pulumi.String("http"),
 					TargetPort:     pulumi.Int(8080),
+				},
+				// HTTPS traffic to backend
+				&digitalocean.LoadBalancerForwardingRuleArgs{
+					EntryProtocol:  pulumi.String("https"),
+					EntryPort:      pulumi.Int(443),
+					TargetProtocol: pulumi.String("http"),
+					TargetPort:     pulumi.Int(8080),
+					CertificateId:  certificate.ID(),
 				},
 			},
 
@@ -224,7 +279,35 @@ func main() {
 			return err
 		}
 
+		// Create DNS A record pointing to load balancer
+		_, err = digitalocean.NewDnsRecord(ctx, "cgc-lb-and-cdn-dns-a", &digitalocean.DnsRecordArgs{
+			Domain: doDomain.Name,
+			Type:   pulumi.String("A"),
+			Name:   pulumi.String("@"),
+			Value:  loadBalancer.Ip,
+			Ttl:    pulumi.Int(300),
+		})
+		if err != nil {
+			return err
+		}
+
+		// Create DNS A record for www subdomain
+		_, err = digitalocean.NewDnsRecord(ctx, "cgc-lb-and-cdn-dns-www", &digitalocean.DnsRecordArgs{
+			Domain: doDomain.Name,
+			Type:   pulumi.String("A"),
+			Name:   pulumi.String("www"),
+			Value:  loadBalancer.Ip,
+			Ttl:    pulumi.Int(300),
+		})
+		if err != nil {
+			return err
+		}
+
 		// Export important information
+		ctx.Export("domain", pulumi.String(domain))
+		ctx.Export("domainUrl", pulumi.String("https://"+domain))
+		ctx.Export("wwwDomainUrl", pulumi.String("https://www."+domain))
+		ctx.Export("certificateId", certificate.ID())
 		ctx.Export("loadBalancerIp", loadBalancer.Ip)
 		ctx.Export("droplet1Ip", droplet1.Ipv4Address)
 		ctx.Export("droplet2Ip", droplet2.Ipv4Address)
@@ -243,16 +326,52 @@ func main() {
 }
 
 // getFullStackUserData returns cloud-init script to deploy both backend and frontend on each droplet
-func getFullStackUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, spacesBucket, spacesEndpoint, valkeyHost, valkeyPort, valkeyPassword string) string {
+func getFullStackUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, spacesBucket, spacesEndpoint, valkeyHost, valkeyPort, valkeyPassword, spacesAccessKey, spacesSecretKey string) string {
 	return fmt.Sprintf(`#!/bin/bash
 set -e
 
+# Setup logging
+LOGFILE="/var/log/cgc-lb-and-cdn-deployment.log"
+exec > >(tee -a "$LOGFILE") 2>&1
+
+echo "================================"
+echo "CGC LB and CDN Deployment Started: $(date)"
+echo "================================"
+
+# Set log upload interval (in minutes) - default to 5 for testing, can be changed via env
+export LOG_UPLOAD_INTERVAL_MINUTES="${LOG_UPLOAD_INTERVAL_MINUTES:-5}"
+echo "[$(date)] Log upload interval set to: ${LOG_UPLOAD_INTERVAL_MINUTES} minutes"
+
+# Export Spaces credentials for s3cmd and cron
+export DO_SPACES_ACCESS_KEY="%s"
+export DO_SPACES_SECRET_KEY="%s"
+
+# Save environment variables to file for cron access
+cat > /etc/environment.d/cgc-lb-and-cdn.conf << ENVCONF
+LOG_UPLOAD_INTERVAL_MINUTES=${LOG_UPLOAD_INTERVAL_MINUTES}
+DO_SPACES_ACCESS_KEY=%s
+DO_SPACES_SECRET_KEY=%s
+ENVCONF
+
 # Update system
+echo "[$(date)] Updating system packages..."
 apt-get update -y
 apt-get upgrade -y
 
 # Install required packages
-apt-get install -y curl wget git build-essential nginx
+echo "[$(date)] Installing required packages..."
+apt-get install -y curl wget git build-essential nginx s3cmd
+
+# Configure s3cmd for DigitalOcean Spaces
+echo "[$(date)] Configuring S3 access for Spaces..."
+cat > /root/.s3cfg << S3CFG
+[default]
+host_base = %s
+host_bucket = %%(bucket)s.%s
+access_key = ${DO_SPACES_ACCESS_KEY}
+secret_key = ${DO_SPACES_SECRET_KEY}
+use_https = True
+S3CFG
 
 # Install Go 1.21
 cd /tmp
@@ -287,6 +406,8 @@ FREEPIK_API_KEY=%s
 USE_DO_SPACES=%s
 DO_SPACES_BUCKET=%s
 DO_SPACES_ENDPOINT=%s
+DO_SPACES_ACCESS_KEY=%s
+DO_SPACES_SECRET_KEY=%s
 DO_VALKEY_HOST=%s
 DO_VALKEY_PORT=%s
 DO_VALKEY_PASSWORD=%s
@@ -316,18 +437,39 @@ EOF
 systemctl enable cgc-lb-and-cdn-backend.service
 
 # Clone repository and deploy backend
+echo "[$(date)] Cloning repository and deploying backend..."
 cd /opt/cgc-lb-and-cdn-backend
 git clone https://github.com/wheeleruniverse/cgc-lb-and-cdn.git repo
 cp -r repo/backend/* .
 rm -rf repo
 
+# Verify environment variables are set
+echo "[$(date)] Verifying environment variables..."
+echo "GOOGLE_API_KEY: ${GOOGLE_API_KEY:0:10}..."
+echo "LEONARDO_API_KEY: ${LEONARDO_API_KEY:0:10}..."
+echo "FREEPIK_API_KEY: ${FREEPIK_API_KEY:0:10}..."
+echo "VALKEY_HOST: $DO_VALKEY_HOST"
+echo "VALKEY_PORT: $DO_VALKEY_PORT"
+
 # Build and start backend
+echo "[$(date)] Building backend application..."
 export PATH=$PATH:/usr/local/go/bin
 export GOPATH=/opt/go
 cd /opt/cgc-lb-and-cdn-backend
 go mod download
 go build -o server ./cmd/server
+
+echo "[$(date)] Starting backend service..."
 systemctl start cgc-lb-and-cdn-backend.service
+sleep 5
+
+# Check backend service status
+echo "[$(date)] Checking backend service status..."
+systemctl status cgc-lb-and-cdn-backend.service --no-pager || true
+
+# Test health endpoint
+echo "[$(date)] Testing health endpoint..."
+curl -v http://localhost:8080/health || echo "Health check failed!"
 
 # ===================
 # FRONTEND SETUP
@@ -395,26 +537,170 @@ systemctl enable nginx
 systemctl start nginx
 
 # Clone repository and deploy frontend
+echo "[$(date)] Cloning repository and deploying frontend..."
 cd /opt/cgc-lb-and-cdn-frontend
 git clone https://github.com/wheeleruniverse/cgc-lb-and-cdn.git repo
 cp -r repo/frontend/* .
 rm -rf repo
 
 # Build and start frontend
+echo "[$(date)] Building frontend application..."
 npm install
 npm run build
+
+echo "[$(date)] Starting frontend with PM2..."
 pm2 start ecosystem.config.js
 pm2 save
 pm2 startup systemd -u root --hp /root
 env PATH=$PATH:/usr/bin pm2 startup systemd -u root --hp /root | tail -n 1 | bash
 
+# Check PM2 status
+echo "[$(date)] Checking PM2 status..."
+pm2 list
+
+# ===================
+# SETUP LOG UPLOAD
+# ===================
+
+# Create script to upload logs to Spaces (if credentials are available)
+cat > /usr/local/bin/upload-logs.sh << 'UPLOADEOF'
+#!/bin/bash
+set -e
+
+HOSTNAME=$(hostname)
+TIMESTAMP=$(date +%%Y%%m%%d-%%H%%M%%S)
+LOGFILE="/var/log/cgc-lb-and-cdn-deployment.log"
+LAST_UPLOAD_FILE="/var/log/cgc-lb-and-cdn-last-upload.txt"
+
+# Track last upload time
+CURRENT_TIME=$(date +%%s)
+if [ -f "$LAST_UPLOAD_FILE" ]; then
+  LAST_UPLOAD_TIME=$(cat "$LAST_UPLOAD_FILE")
+  TIME_SINCE_UPLOAD=$(( CURRENT_TIME - LAST_UPLOAD_TIME ))
+else
+  LAST_UPLOAD_TIME=0
+  TIME_SINCE_UPLOAD=0
+fi
+
+# Create a consolidated log file
+CONSOLIDATED="/tmp/cgc-lb-and-cdn-logs-${TIMESTAMP}.log"
+{
+  echo "================================"
+  echo "CGC LB and CDN Log Upload"
+  echo "Hostname: $HOSTNAME"
+  echo "Timestamp: $(date)"
+  echo "Time since last upload: ${TIME_SINCE_UPLOAD} seconds"
+  echo "================================"
+  echo ""
+
+  # Check if there are new logs
+  LOG_SIZE=$(wc -l < "$LOGFILE" 2>/dev/null || echo "0")
+
+  if [ "$LOG_SIZE" -eq 0 ] && [ "$TIME_SINCE_UPLOAD" -lt 300 ]; then
+    echo "ℹ️  No new deployment logs since last upload."
+    echo "   This upload confirms the log monitoring system is still active."
+  fi
+
+  echo "=== Deployment Log (${LOG_SIZE} lines) ==="
+  cat "$LOGFILE" 2>/dev/null || echo "No deployment log available"
+  echo ""
+
+  echo "=== Backend Service Status ==="
+  systemctl status cgc-lb-and-cdn-backend.service --no-pager -l 2>/dev/null || echo "Backend service not running"
+  echo ""
+
+  echo "=== Backend Service Log (Last 100 lines) ==="
+  journalctl -u cgc-lb-and-cdn-backend.service --no-pager -n 100 2>/dev/null || echo "No backend logs available"
+  echo ""
+
+  echo "=== PM2 Status ==="
+  pm2 list 2>/dev/null || echo "PM2 not running"
+  echo ""
+
+  echo "=== PM2 Logs (Last 100 lines) ==="
+  pm2 logs --nostream --lines 100 2>/dev/null || echo "No PM2 logs available"
+  echo ""
+
+  echo "=== Nginx Error Log (Last 50 lines) ==="
+  tail -n 50 /var/log/nginx/error.log 2>/dev/null || echo "No nginx errors"
+  echo ""
+
+  echo "=== Nginx Access Log (Last 20 lines) ==="
+  tail -n 20 /var/log/nginx/access.log 2>/dev/null || echo "No nginx access logs"
+  echo ""
+
+  echo "=== Health Check Test ==="
+  curl -s http://localhost:8080/health 2>&1 || echo "Health check failed or backend not responding"
+  echo ""
+
+  echo "=== System Info ==="
+  echo "Uptime: $(uptime)"
+  echo "Load Average: $(cat /proc/loadavg)"
+  echo "Memory: $(free -h | grep Mem)"
+  echo "Disk: $(df -h / | tail -n 1)"
+  echo "Active Connections: $(netstat -an | grep ESTABLISHED | wc -l)"
+  echo ""
+
+  echo "================================"
+  echo "Log upload completed: $(date)"
+  echo "================================"
+} > "$CONSOLIDATED"
+
+# Upload to Spaces if s3cmd is configured
+if [ -f /root/.s3cfg ] && [ -n "${DO_SPACES_ACCESS_KEY}" ]; then
+  s3cmd put "$CONSOLIDATED" "s3://%s/logs/${HOSTNAME}/${TIMESTAMP}.log" 2>&1 && \
+    echo "✅ Logs uploaded to Spaces: s3://%s/logs/${HOSTNAME}/${TIMESTAMP}.log" || \
+    echo "❌ Failed to upload logs to Spaces"
+
+  # Update last upload timestamp
+  echo "$CURRENT_TIME" > "$LAST_UPLOAD_FILE"
+else
+  echo "⚠️  Spaces credentials not configured, logs saved locally only at: $CONSOLIDATED"
+fi
+
+# Cleanup old local log files (keep last 20)
+find /tmp -name "cgc-lb-and-cdn-logs-*.log" -mtime +1 -delete 2>/dev/null || true
+
+echo "Log collection and upload complete."
+UPLOADEOF
+
+chmod +x /usr/local/bin/upload-logs.sh
+
+# Set up cron job to upload logs based on LOG_UPLOAD_INTERVAL_MINUTES
+echo "[$(date)] Setting up cron job with ${LOG_UPLOAD_INTERVAL_MINUTES} minute interval..."
+echo "*/${LOG_UPLOAD_INTERVAL_MINUTES} * * * * LOG_UPLOAD_INTERVAL_MINUTES=${LOG_UPLOAD_INTERVAL_MINUTES} DO_SPACES_ACCESS_KEY=${DO_SPACES_ACCESS_KEY} DO_SPACES_SECRET_KEY=${DO_SPACES_SECRET_KEY} /usr/local/bin/upload-logs.sh >> /var/log/cgc-lb-and-cdn-log-upload.log 2>&1" | crontab -
+
+# Verify cron job was set
+echo "[$(date)] Cron job configured:"
+crontab -l
+
+# Upload initial logs
+echo "[$(date)] Uploading initial logs..."
+/usr/local/bin/upload-logs.sh
+
 # ===================
 # DEPLOYMENT COMPLETE
 # ===================
 
-echo "Full-stack droplet deployment completed!"
+echo "================================"
+echo "[$(date)] Full-stack droplet deployment completed!"
 echo "Backend API running on localhost:8080"
 echo "Frontend running on localhost:3000"
 echo "Nginx proxy running on port 80"
-`, googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, spacesBucket, spacesEndpoint, valkeyHost, valkeyPort, valkeyPassword)
+echo "Deployment logs: /var/log/cgc-lb-and-cdn-deployment.log"
+echo "Upload logs: /var/log/cgc-lb-and-cdn-log-upload.log"
+echo "Log upload interval: ${LOG_UPLOAD_INTERVAL_MINUTES} minutes"
+echo "================================"
+`,
+		// Spaces credentials (for export and ENVCONF - 4 placeholders)
+		spacesAccessKey, spacesSecretKey, spacesAccessKey, spacesSecretKey,
+		// s3cmd configuration (2 placeholders)
+		spacesEndpoint, spacesEndpoint,
+		// Backend .env file (13 placeholders)
+		googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, spacesBucket, spacesEndpoint,
+		spacesAccessKey, spacesSecretKey,
+		valkeyHost, valkeyPort, valkeyPassword,
+		// Log upload script s3cmd paths (2 placeholders)
+		spacesBucket, spacesBucket,
+	)
 }

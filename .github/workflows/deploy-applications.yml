@@ -34,8 +34,9 @@ jobs:
       working-directory: hosting
       run: |
         pulumi stack select dev
-        echo "BACKEND_IP=$(pulumi stack output backendDropletIp)" >> $GITHUB_ENV
-        echo "FRONTEND_IP=$(pulumi stack output frontendDropletIp)" >> $GITHUB_ENV
+        echo "DROPLET1_IP=$(pulumi stack output droplet1Ip)" >> $GITHUB_ENV
+        echo "DROPLET2_IP=$(pulumi stack output droplet2Ip)" >> $GITHUB_ENV
+        echo "LB_IP=$(pulumi stack output loadBalancerIp)" >> $GITHUB_ENV
         echo "DO_SPACES_BUCKET=$(pulumi stack output spacesBucketName)" >> $GITHUB_ENV
         echo "DO_SPACES_ENDPOINT=$(pulumi stack output spacesBucketEndpoint)" >> $GITHUB_ENV
         echo "DO_VALKEY_HOST=$(pulumi stack output valkeyClusterHost)" >> $GITHUB_ENV
@@ -57,10 +58,12 @@ jobs:
         cd ..
 
         echo "✅ Backend application built and packaged" >> $GITHUB_STEP_SUMMARY
-        echo "Backend will be deployed via droplet user-data script" >> $GITHUB_STEP_SUMMARY
+        echo "Applications deployed via droplet user-data script (full-stack on both droplets)" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "**Configuration:**" >> $GITHUB_STEP_SUMMARY
-        echo "- Backend IP: ${{ env.BACKEND_IP }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Droplet 1 IP: ${{ env.DROPLET1_IP }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Droplet 2 IP: ${{ env.DROPLET2_IP }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Load Balancer IP: ${{ env.LB_IP }}" >> $GITHUB_STEP_SUMMARY
         echo "- DO Spaces Bucket: ${{ env.DO_SPACES_BUCKET }}" >> $GITHUB_STEP_SUMMARY
         echo "- DO Spaces Endpoint: ${{ env.DO_SPACES_ENDPOINT }}" >> $GITHUB_STEP_SUMMARY
         echo "- DO Valkey Host: ${{ env.DO_VALKEY_HOST }}" >> $GITHUB_STEP_SUMMARY
@@ -90,9 +93,10 @@ jobs:
       working-directory: hosting
       run: |
         pulumi stack select dev
-        echo "BACKEND_IP=$(pulumi stack output backendDropletIp)" >> $GITHUB_ENV
-        echo "FRONTEND_IP=$(pulumi stack output frontendDropletIp)" >> $GITHUB_ENV
+        echo "DROPLET1_IP=$(pulumi stack output droplet1Ip)" >> $GITHUB_ENV
+        echo "DROPLET2_IP=$(pulumi stack output droplet2Ip)" >> $GITHUB_ENV
         echo "LB_IP=$(pulumi stack output loadBalancerIp)" >> $GITHUB_ENV
+        echo "DOMAIN=$(pulumi stack output domain 2>/dev/null || echo '')" >> $GITHUB_ENV
 
     - name: Deploy frontend application
       run: |
@@ -128,7 +132,8 @@ jobs:
         echo "Frontend will be deployed via droplet user-data script" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "**Configuration:**" >> $GITHUB_STEP_SUMMARY
-        echo "- Frontend IP: ${{ env.FRONTEND_IP }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Droplet 1 IP: ${{ env.DROPLET1_IP }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Droplet 2 IP: ${{ env.DROPLET2_IP }}" >> $GITHUB_STEP_SUMMARY
         echo "- Load Balancer IP: ${{ env.LB_IP }}" >> $GITHUB_STEP_SUMMARY
 
     - name: Deployment summary
@@ -136,15 +141,24 @@ jobs:
         echo "## 🚀 Deployment Complete!" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 🌐 Access URLs" >> $GITHUB_STEP_SUMMARY
-        echo "- **Primary Application**: http://${{ env.LB_IP }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Backend API** (private): http://${{ env.BACKEND_IP }}:8080" >> $GITHUB_STEP_SUMMARY
-        echo "- **Frontend** (private): http://${{ env.FRONTEND_IP }}" >> $GITHUB_STEP_SUMMARY
+        if [ -n "${{ env.DOMAIN }}" ]; then
+          echo "- **Primary Application**: https://${{ env.DOMAIN }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Alternative (IP)**: http://${{ env.LB_IP }}" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "- **Primary Application**: http://${{ env.LB_IP }}" >> $GITHUB_STEP_SUMMARY
+        fi
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 🔍 Health Checks" >> $GITHUB_STEP_SUMMARY
-        echo "- Backend Health: http://${{ env.BACKEND_IP }}:8080/health" >> $GITHUB_STEP_SUMMARY
         echo "- Load Balancer Health: Check DigitalOcean dashboard" >> $GITHUB_STEP_SUMMARY
+        echo "- Droplets are configured with internal health checks on :8080/health" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🖥️ Full-Stack Droplets" >> $GITHUB_STEP_SUMMARY
+        echo "- **Droplet 1**: ${{ env.DROPLET1_IP }} (runs backend + frontend)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Droplet 2**: ${{ env.DROPLET2_IP }} (runs backend + frontend)" >> $GITHUB_STEP_SUMMARY
+        echo "- Both droplets behind load balancer for high availability" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 📊 Infrastructure" >> $GITHUB_STEP_SUMMARY
         echo "- **Database**: Valkey cluster at ${{ env.DO_VALKEY_HOST }}:${{ env.DO_VALKEY_PORT }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Storage**: DigitalOcean Spaces at ${{ env.DO_SPACES_ENDPOINT }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Storage**: DigitalOcean Spaces bucket '${{ env.DO_SPACES_BUCKET }}'" >> $GITHUB_STEP_SUMMARY
         echo "- **CDN**: Integrated with Spaces for fast image delivery" >> $GITHUB_STEP_SUMMARY
+        echo "- **Logs**: Uploaded to Spaces every 5 minutes at s3://${{ env.DO_SPACES_BUCKET }}/logs/" >> $GITHUB_STEP_SUMMARY

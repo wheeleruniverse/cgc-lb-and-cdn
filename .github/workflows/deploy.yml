@@ -43,6 +43,10 @@ jobs:
         pulumi config set --secret cgc-lb-and-cdn:leonardo_api_key "${{ secrets.LEONARDO_API_KEY }}"
         pulumi config set --secret cgc-lb-and-cdn:freepik_api_key "${{ secrets.FREEPIK_API_KEY }}"
 
+        # Configure DigitalOcean Spaces credentials
+        pulumi config set --secret cgc-lb-and-cdn:do_spaces_access_key "${{ secrets.DO_SPACES_ACCESS_KEY }}"
+        pulumi config set --secret cgc-lb-and-cdn:do_spaces_secret_key "${{ secrets.DO_SPACES_SECRET_KEY }}"
+
         # Configure storage settings
         pulumi config set cgc-lb-and-cdn:use_do_spaces "true"
 
