@@ -167,14 +167,15 @@ func main() {
 			},
 
 			// Health check configuration
+			// More lenient settings to keep droplets in rotation during temporary issues
 			Healthcheck: &digitalocean.LoadBalancerHealthcheckArgs{
 				Protocol:               pulumi.String("http"),
 				Port:                   pulumi.Int(8080),
 				Path:                   pulumi.String("/health"),
 				CheckIntervalSeconds:   pulumi.Int(10),
-				ResponseTimeoutSeconds: pulumi.Int(5),
-				HealthyThreshold:       pulumi.Int(3),
-				UnhealthyThreshold:     pulumi.Int(3),
+				ResponseTimeoutSeconds: pulumi.Int(10),  // Increased from 5s to 10s
+				HealthyThreshold:       pulumi.Int(2),   // Reduced from 3 to 2 (faster recovery)
+				UnhealthyThreshold:     pulumi.Int(5),   // Increased from 3 to 5 (more tolerant)
 			},
 
 			// Sticky sessions
