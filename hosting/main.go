@@ -112,15 +112,10 @@ func main() {
 			return err
 		}
 
-		// Create domain in DigitalOcean first (needed for Let's Encrypt verification)
-		doDomain, err := digitalocean.NewDomain(ctx, "cgc-lb-and-cdn-domain", &digitalocean.DomainArgs{
-			Name: pulumi.String(domain),
-		})
-		if err != nil {
-			return err
-		}
+		// Note: Domain should already exist in DigitalOcean (manually created or via DNS provider)
+		// We'll just use the domain name for DNS records and certificate
 
-		// Create Let's Encrypt certificate for the domain (after domain is added)
+		// Create Let's Encrypt certificate for the domain
 		certificate, err := digitalocean.NewCertificate(ctx, "cgc-lb-and-cdn-cert", &digitalocean.CertificateArgs{
 			Name:    pulumi.String("cgc-lb-and-cdn-cert"),
 			Type:    pulumi.String("lets_encrypt"),
@@ -128,7 +123,7 @@ func main() {
 				pulumi.String(domain),
 				pulumi.String("www." + domain),
 			},
-		}, pulumi.DependsOn([]pulumi.Resource{doDomain}))
+		})
 		if err != nil {
 			return err
 		}
@@ -281,7 +276,7 @@ func main() {
 
 		// Create DNS A record pointing to load balancer
 		_, err = digitalocean.NewDnsRecord(ctx, "cgc-lb-and-cdn-dns-a", &digitalocean.DnsRecordArgs{
-			Domain: doDomain.Name,
+			Domain: pulumi.String(domain),
 			Type:   pulumi.String("A"),
 			Name:   pulumi.String("@"),
 			Value:  loadBalancer.Ip,
@@ -293,7 +288,7 @@ func main() {
 
 		// Create DNS A record for www subdomain
 		_, err = digitalocean.NewDnsRecord(ctx, "cgc-lb-and-cdn-dns-www", &digitalocean.DnsRecordArgs{
-			Domain: doDomain.Name,
+			Domain: pulumi.String(domain),
 			Type:   pulumi.String("A"),
 			Name:   pulumi.String("www"),
 			Value:  loadBalancer.Ip,
