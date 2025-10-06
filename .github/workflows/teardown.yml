@@ -31,6 +31,11 @@ jobs:
     - name: Setup Pulumi CLI
       uses: pulumi/actions@v4
 
+    - name: Install doctl
+      uses: digitalocean/action-doctl@v2
+      with:
+        token: ${{ secrets.DO_ACCESS_TOKEN }}
+
     - name: Build infrastructure program
       working-directory: hosting
       run: |
@@ -44,6 +49,34 @@ jobs:
         pulumi stack select dev
         echo "🗑️ Starting infrastructure teardown..." >> $GITHUB_STEP_SUMMARY
 
+        # Get domain from Pulumi config
+        DOMAIN=$(pulumi config get cgc-lb-and-cdn:domain || echo "wheeleraiduel.online")
+        echo "📋 Domain: $DOMAIN" >> $GITHUB_STEP_SUMMARY
+
+        # Clean up auto-created DNS records (created by Let's Encrypt validation)
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🧹 Cleaning up auto-created DNS records" >> $GITHUB_STEP_SUMMARY
+
+        # Get all A and AAAA records for apex domain
+        APEX_A_RECORDS=$(doctl compute domain records list "$DOMAIN" --format ID,Type,Name --no-header | grep -E "^[0-9]+\s+A\s+@" | awk '{print $1}' || true)
+        APEX_AAAA_RECORDS=$(doctl compute domain records list "$DOMAIN" --format ID,Type,Name --no-header | grep -E "^[0-9]+\s+AAAA\s+@" | awk '{print $1}' || true)
+
+        # Delete apex A records
+        if [ -n "$APEX_A_RECORDS" ]; then
+          for record_id in $APEX_A_RECORDS; do
+            echo "  🗑️ Deleting A record (ID: $record_id)" >> $GITHUB_STEP_SUMMARY
+            doctl compute domain records delete "$DOMAIN" "$record_id" --force || true
+          done
+        fi
+
+        # Delete apex AAAA records
+        if [ -n "$APEX_AAAA_RECORDS" ]; then
+          for record_id in $APEX_AAAA_RECORDS; do
+            echo "  🗑️ Deleting AAAA record (ID: $record_id)" >> $GITHUB_STEP_SUMMARY
+            doctl compute domain records delete "$DOMAIN" "$record_id" --force || true
+          done
+        fi
+
         # Try to destroy all resources
         pulumi destroy --yes || true
 
@@ -52,12 +85,14 @@ jobs:
           echo "🔧 Removed VPC from Pulumi state (VPC cannot be deleted - this is normal)" >> $GITHUB_STEP_SUMMARY
         fi
 
+        echo "" >> $GITHUB_STEP_SUMMARY
         echo "✅ Infrastructure teardown complete!" >> $GITHUB_STEP_SUMMARY
         echo "💰 Monthly cost savings: ~$39/month" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 📋 Manual Cleanup (if needed)" >> $GITHUB_STEP_SUMMARY
         echo "- Delete DO Spaces bucket 'cgc-lb-and-cdn-content' if created manually" >> $GITHUB_STEP_SUMMARY
         echo "- VPC remains (cannot be deleted - this is normal and free)" >> $GITHUB_STEP_SUMMARY
+        echo "- DNS NS records remain (nameserver records for your domain)" >> $GITHUB_STEP_SUMMARY
         echo "- Remove unused GitHub secrets if desired" >> $GITHUB_STEP_SUMMARY
       env:
         PULUMI_STACK: dev
