@@ -343,6 +343,7 @@ export DO_SPACES_ACCESS_KEY="%s"
 export DO_SPACES_SECRET_KEY="%s"
 
 # Save environment variables to file for cron access
+mkdir -p /etc/environment.d
 cat > /etc/environment.d/cgc-lb-and-cdn.conf << ENVCONF
 LOG_UPLOAD_INTERVAL_MINUTES=${LOG_UPLOAD_INTERVAL_MINUTES}
 DO_SPACES_ACCESS_KEY=%s
