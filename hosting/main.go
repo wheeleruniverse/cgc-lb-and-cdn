@@ -117,8 +117,8 @@ func main() {
 
 		// Create Let's Encrypt certificate for the domain
 		certificate, err := digitalocean.NewCertificate(ctx, "cgc-lb-and-cdn-cert", &digitalocean.CertificateArgs{
-			Name:    pulumi.String("cgc-lb-and-cdn-cert"),
-			Type:    pulumi.String("lets_encrypt"),
+			Name: pulumi.String("cgc-lb-and-cdn-cert"),
+			Type: pulumi.String("lets_encrypt"),
 			Domains: pulumi.StringArray{
 				pulumi.String(domain),
 				pulumi.String("www." + domain),
@@ -173,9 +173,9 @@ func main() {
 				Port:                   pulumi.Int(8080),
 				Path:                   pulumi.String("/health"),
 				CheckIntervalSeconds:   pulumi.Int(10),
-				ResponseTimeoutSeconds: pulumi.Int(10),  // Increased from 5s to 10s
-				HealthyThreshold:       pulumi.Int(2),   // Reduced from 3 to 2 (faster recovery)
-				UnhealthyThreshold:     pulumi.Int(5),   // Increased from 3 to 5 (more tolerant)
+				ResponseTimeoutSeconds: pulumi.Int(10), // Increased from 5s to 10s
+				HealthyThreshold:       pulumi.Int(2),  // Reduced from 3 to 2 (faster recovery)
+				UnhealthyThreshold:     pulumi.Int(5),  // Increased from 3 to 5 (more tolerant)
 			},
 
 			// Sticky sessions
@@ -275,11 +275,16 @@ func main() {
 			return err
 		}
 
-		// Create DNS A record pointing to load balancer
-		_, err = digitalocean.NewDnsRecord(ctx, "cgc-lb-and-cdn-dns-a", &digitalocean.DnsRecordArgs{
+		// Note: DNS A (IPv4) and AAAA (IPv6) records are automatically created by DigitalOcean when the
+		// Let's Encrypt certificate is issued for the Zone Apex route. The certificate creation process requires
+		// domain validation, so DigitalOcean auto-creates DNS records pointing to the load balancer to complete the
+		// HTTP-01 challenge.
+
+		// Create DNS A record for www subdomain
+		_, err = digitalocean.NewDnsRecord(ctx, "cgc-lb-and-cdn-dns-www-v4", &digitalocean.DnsRecordArgs{
 			Domain: pulumi.String(domain),
 			Type:   pulumi.String("A"),
-			Name:   pulumi.String("@"),
+			Name:   pulumi.String("www"),
 			Value:  loadBalancer.Ip,
 			Ttl:    pulumi.Int(300),
 		})
@@ -287,12 +292,12 @@ func main() {
 			return err
 		}
 
-		// Create DNS A record for www subdomain
-		_, err = digitalocean.NewDnsRecord(ctx, "cgc-lb-and-cdn-dns-www", &digitalocean.DnsRecordArgs{
+		// Create DNS AAAA record for www subdomain
+		_, err = digitalocean.NewDnsRecord(ctx, "cgc-lb-and-cdn-dns-www-v6", &digitalocean.DnsRecordArgs{
 			Domain: pulumi.String(domain),
-			Type:   pulumi.String("A"),
+			Type:   pulumi.String("AAAA"),
 			Name:   pulumi.String("www"),
-			Value:  loadBalancer.Ip,
+			Value:  loadBalancer.Ipv6,
 			Ttl:    pulumi.Int(300),
 		})
 		if err != nil {
