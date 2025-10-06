@@ -2,6 +2,12 @@ name: Deploy Infrastructure
 
 on:
   workflow_dispatch:
+    inputs:
+      domain:
+        description: 'Domain name for the deployment'
+        required: false
+        type: string
+        default: 'wheeleraiduel.online'
 
 env:
   PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
@@ -39,6 +45,9 @@ jobs:
       working-directory: hosting
       run: |
         pulumi stack select dev --create
+
+        # Configure domain
+        pulumi config set cgc-lb-and-cdn:domain "${{ github.event.inputs.domain }}"
 
         # Configure API keys as Pulumi secrets
         pulumi config set --secret cgc-lb-and-cdn:google_api_key "${{ secrets.GOOGLE_API_KEY }}"

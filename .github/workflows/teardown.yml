@@ -7,6 +7,11 @@ on:
         description: 'Type "DESTROY" to confirm teardown'
         required: true
         type: string
+      domain:
+        description: 'Domain name to clean up DNS records'
+        required: false
+        type: string
+        default: 'wheeleraiduel.online'
 
 env:
   PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
@@ -51,8 +56,8 @@ jobs:
         pulumi stack select dev
         echo "🗑️ Starting infrastructure teardown..." >> $GITHUB_STEP_SUMMARY
 
-        # Get domain from Pulumi config
-        DOMAIN=$(pulumi config get cgc-lb-and-cdn:domain || echo "wheeleraiduel.online")
+        # Get domain from workflow input (has default value)
+        DOMAIN="${{ github.event.inputs.domain }}"
         echo "📋 Domain: $DOMAIN" >> $GITHUB_STEP_SUMMARY
 
         # Clean up auto-created DNS records (created by Let's Encrypt validation)
@@ -60,12 +65,24 @@ jobs:
         echo "### 🧹 Cleaning up auto-created DNS records" >> $GITHUB_STEP_SUMMARY
 
         # List all DNS records for debugging
-        echo "Current DNS records:" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
         doctl compute domain records list "$DOMAIN" --format ID,Type,Name --no-header >> $GITHUB_STEP_SUMMARY || true
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
-        # Get all A and AAAA records for apex domain (match both "@" and full domain name)
-        APEX_A_RECORDS=$(doctl compute domain records list "$DOMAIN" --format ID,Type,Name --no-header | grep -E "^\s*[0-9]+\s+A\s+(@|${DOMAIN})\s*$" | awk '{print $1}' || true)
-        APEX_AAAA_RECORDS=$(doctl compute domain records list "$DOMAIN" --format ID,Type,Name --no-header | grep -E "^\s*[0-9]+\s+AAAA\s+(@|${DOMAIN})\s*$" | awk '{print $1}' || true)
+        # Get all A and AAAA records for apex domain
+        # Name field for apex can be "@", ".", the full domain, or empty
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Looking for apex A/AAAA records (excluding 'www' subdomain)..." >> $GITHUB_STEP_SUMMARY
+
+        APEX_A_RECORDS=$(doctl compute domain records list "$DOMAIN" --format ID,Type,Name --no-header | \
+          grep -E "^\s*[0-9]+\s+A\s+" | \
+          grep -v "www" | \
+          awk '{print $1}' || true)
+
+        APEX_AAAA_RECORDS=$(doctl compute domain records list "$DOMAIN" --format ID,Type,Name --no-header | \
+          grep -E "^\s*[0-9]+\s+AAAA\s+" | \
+          grep -v "www" | \
+          awk '{print $1}' || true)
 
         # Delete apex A records
         if [ -n "$APEX_A_RECORDS" ]; then
