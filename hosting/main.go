@@ -298,7 +298,7 @@ func main() {
 			Type:   pulumi.String("AAAA"),
 			Name:   pulumi.String("www"),
 			Value:  loadBalancer.Ipv6,
-			Ttl:    pulumi.Int(300),
+			Ttl:    pulumi.Int(3600),
 		})
 		if err != nil {
 			return err
