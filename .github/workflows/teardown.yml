@@ -11,6 +11,8 @@ on:
 env:
   PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
   DIGITALOCEAN_TOKEN: ${{ secrets.DO_ACCESS_TOKEN }}
+  SPACES_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_ACCESS_KEY }}
+  SPACES_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET_KEY }}
 
 jobs:
   teardown:
@@ -57,32 +59,58 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 🧹 Cleaning up auto-created DNS records" >> $GITHUB_STEP_SUMMARY
 
-        # Get all A and AAAA records for apex domain
-        APEX_A_RECORDS=$(doctl compute domain records list "$DOMAIN" --format ID,Type,Name --no-header | grep -E "^[0-9]+\s+A\s+@" | awk '{print $1}' || true)
-        APEX_AAAA_RECORDS=$(doctl compute domain records list "$DOMAIN" --format ID,Type,Name --no-header | grep -E "^[0-9]+\s+AAAA\s+@" | awk '{print $1}' || true)
+        # List all DNS records for debugging
+        echo "Current DNS records:" >> $GITHUB_STEP_SUMMARY
+        doctl compute domain records list "$DOMAIN" --format ID,Type,Name --no-header >> $GITHUB_STEP_SUMMARY || true
+
+        # Get all A and AAAA records for apex domain (match both "@" and full domain name)
+        APEX_A_RECORDS=$(doctl compute domain records list "$DOMAIN" --format ID,Type,Name --no-header | grep -E "^\s*[0-9]+\s+A\s+(@|${DOMAIN})\s*$" | awk '{print $1}' || true)
+        APEX_AAAA_RECORDS=$(doctl compute domain records list "$DOMAIN" --format ID,Type,Name --no-header | grep -E "^\s*[0-9]+\s+AAAA\s+(@|${DOMAIN})\s*$" | awk '{print $1}' || true)
 
         # Delete apex A records
         if [ -n "$APEX_A_RECORDS" ]; then
+          echo "" >> $GITHUB_STEP_SUMMARY
           for record_id in $APEX_A_RECORDS; do
             echo "  🗑️ Deleting A record (ID: $record_id)" >> $GITHUB_STEP_SUMMARY
             doctl compute domain records delete "$DOMAIN" "$record_id" --force || true
           done
+        else
+          echo "  ℹ️ No apex A records found to delete" >> $GITHUB_STEP_SUMMARY
         fi
 
         # Delete apex AAAA records
         if [ -n "$APEX_AAAA_RECORDS" ]; then
+          echo "" >> $GITHUB_STEP_SUMMARY
           for record_id in $APEX_AAAA_RECORDS; do
             echo "  🗑️ Deleting AAAA record (ID: $record_id)" >> $GITHUB_STEP_SUMMARY
             doctl compute domain records delete "$DOMAIN" "$record_id" --force || true
           done
+        else
+          echo "  ℹ️ No apex AAAA records found to delete" >> $GITHUB_STEP_SUMMARY
         fi
 
         # Try to destroy all resources
-        pulumi destroy --yes || true
+        pulumi destroy --yes || DESTROY_FAILED=true
 
-        # If VPC deletion failed (expected), remove it from state
-        if pulumi state delete "urn:pulumi:dev::cgc-lb-and-cdn::digitalocean:index/vpc:Vpc::cgc-lb-and-cdn-vpc" 2>/dev/null; then
-          echo "🔧 Removed VPC from Pulumi state (VPC cannot be deleted - this is normal)" >> $GITHUB_STEP_SUMMARY
+        # Handle resources that may fail to delete
+        if [ "$DESTROY_FAILED" = "true" ]; then
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ⚠️ Cleanup Issues Detected" >> $GITHUB_STEP_SUMMARY
+
+          # Remove Spaces bucket from state if deletion failed
+          if pulumi state delete "urn:pulumi:dev::cgc-lb-and-cdn::digitalocean:index/spacesBucket:SpacesBucket::cgc-lb-and-cdn-spaces" 2>/dev/null; then
+            echo "  🔧 Removed Spaces bucket from Pulumi state (bucket may still exist in DO)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Remove VPC from state if deletion failed
+          if pulumi state delete "urn:pulumi:dev::cgc-lb-and-cdn::digitalocean:index/vpc:Vpc::cgc-lb-and-cdn-vpc" 2>/dev/null; then
+            echo "  🔧 Removed VPC from Pulumi state (VPC cannot be deleted via API)" >> $GITHUB_STEP_SUMMARY
+          fi
+        else
+          # If only VPC deletion failed (expected), remove it from state
+          if pulumi state delete "urn:pulumi:dev::cgc-lb-and-cdn::digitalocean:index/vpc:Vpc::cgc-lb-and-cdn-vpc" 2>/dev/null; then
+            echo "🔧 Removed VPC from Pulumi state (VPC cannot be deleted - this is normal)" >> $GITHUB_STEP_SUMMARY
+          fi
         fi
 
         echo "" >> $GITHUB_STEP_SUMMARY
