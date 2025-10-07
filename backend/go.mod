@@ -1,4 +1,4 @@
-module cgc-image-service
+module cgc-lb-and-cdn-backend
 
 go 1.23
 

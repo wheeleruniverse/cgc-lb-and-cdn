@@ -6,3 +6,18 @@
 .idea/
 
 images/
+
+# Hosting executables
+hosting/cgc-hosting
+hosting/cgc-lb-and-cdn-hosting
+
+# Backend build artifacts
+backend/bin/
+backend/cgc-lb-and-cdn-backend
+backend/backend-deploy.tar.gz
+
+# Frontend build artifacts
+frontend/.next/
+frontend/out/
+frontend/frontend-deploy.tar.gz
+frontend/node_modules/

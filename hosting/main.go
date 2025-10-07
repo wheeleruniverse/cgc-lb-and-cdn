@@ -131,23 +131,23 @@ func main() {
 		}
 
 		// Load balancer to distribute traffic between both droplets
+		// Wait for droplets to have IPs assigned before adding to LB
 		loadBalancer, err := digitalocean.NewLoadBalancer(ctx, "cgc-lb-and-cdn-lb", &digitalocean.LoadBalancerArgs{
 			Name:    pulumi.String("cgc-lb-and-cdn-lb"),
 			Region:  pulumi.String("nyc3"),
 			Size:    pulumi.String("lb-small"),
 			VpcUuid: vpc.ID(),
 
-			// Connect to both droplets
-			DropletIds: pulumi.IntArray{
-				droplet1.ID().ApplyT(func(id string) (int, error) {
-					// Pulumi's ID is a string, so we need to parse it to an integer.
-					// A Droplet's ID is guaranteed to be a string representation of an integer.
-					return strconv.Atoi(id)
-				}).(pulumi.IntOutput),
-				droplet2.ID().ApplyT(func(id string) (int, error) {
-					return strconv.Atoi(id)
-				}).(pulumi.IntOutput),
-			},
+			// Connect to both droplets (using All to ensure both have IPs)
+			DropletIds: pulumi.All(droplet1.Ipv4Address, droplet2.Ipv4Address, droplet1.ID(), droplet2.ID()).ApplyT(func(args []interface{}) []int {
+				// args[0] = droplet1 IP (ensures it's ready)
+				// args[1] = droplet2 IP (ensures it's ready)
+				// args[2] = droplet1 ID
+				// args[3] = droplet2 ID
+				id1, _ := strconv.Atoi(args[2].(string))
+				id2, _ := strconv.Atoi(args[3].(string))
+				return []int{id1, id2}
+			}).(pulumi.IntArrayOutput),
 
 			// Forward traffic to backend API on port 8080
 			ForwardingRules: digitalocean.LoadBalancerForwardingRuleArray{

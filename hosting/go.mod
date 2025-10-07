@@ -1,4 +1,4 @@
-module cgc-hosting
+module cgc-lb-and-cdn-hosting
 
 go 1.25.0
 
