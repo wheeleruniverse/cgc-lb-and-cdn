@@ -340,33 +340,36 @@ func getFullStackUserData(sha, googleAPIKey, leonardoAPIKey, freepikAPIKey, useD
 	return fmt.Sprintf(`#!/bin/bash
 set -e
 
+# Deployment configuration (passed from Pulumi)
+DEPLOYMENT_SHA="%s"
+GOOGLE_API_KEY="%s"
+LEONARDO_API_KEY="%s"
+FREEPIK_API_KEY="%s"
+USE_DO_SPACES="%s"
+DO_SPACES_LEFT_BUCKET="%s"
+DO_SPACES_RIGHT_BUCKET="%s"
+DO_SPACES_ENDPOINT="%s"
+DO_SPACES_ACCESS_KEY="%s"
+DO_SPACES_SECRET_KEY="%s"
+DO_VALKEY_HOST="%s"
+DO_VALKEY_PORT="%s"
+DO_VALKEY_PASSWORD="%s"
+
 # Setup logging
 LOGFILE="/var/log/cgc-lb-and-cdn-deployment.log"
 exec > >(tee -a "$LOGFILE") 2>&1
 
 echo "================================"
 echo "Cloud Portfolio Challenge LB and CDN Deployment Started: $(date)"
-echo "Deployment SHA: %s"
+echo "Deployment SHA: ${DEPLOYMENT_SHA}"
 echo "================================"
 
 # Set non-interactive mode for all apt operations
 export DEBIAN_FRONTEND=noninteractive
 
 # Set log upload interval (in minutes) - default to 5 for testing, can be changed via env
-export LOG_UPLOAD_INTERVAL_MINUTES="${LOG_UPLOAD_INTERVAL_MINUTES:-5}"
+LOG_UPLOAD_INTERVAL_MINUTES="${LOG_UPLOAD_INTERVAL_MINUTES:-5}"
 echo "[$(date)] Log upload interval set to: ${LOG_UPLOAD_INTERVAL_MINUTES} minutes"
-
-# Export Spaces credentials for s3cmd and cron
-export DO_SPACES_ACCESS_KEY="%s"
-export DO_SPACES_SECRET_KEY="%s"
-
-# Save environment variables to file for cron access
-mkdir -p /etc/environment.d
-cat > /etc/environment.d/cgc-lb-and-cdn.conf << ENVCONF
-LOG_UPLOAD_INTERVAL_MINUTES=${LOG_UPLOAD_INTERVAL_MINUTES}
-DO_SPACES_ACCESS_KEY=%s
-DO_SPACES_SECRET_KEY=%s
-ENVCONF
 
 # Update system
 echo "[$(date)] Updating system packages..."
@@ -381,8 +384,8 @@ apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--fo
 echo "[$(date)] Configuring S3 access for Spaces..."
 cat > /root/.s3cfg << S3CFG
 [default]
-host_base = %s
-host_bucket = %%(bucket)s.%s
+host_base = ${DO_SPACES_ENDPOINT}
+host_bucket = %%(bucket)s.${DO_SPACES_ENDPOINT}
 access_key = ${DO_SPACES_ACCESS_KEY}
 secret_key = ${DO_SPACES_SECRET_KEY}
 use_https = True
@@ -412,21 +415,21 @@ mkdir -p /opt/cgc-lb-and-cdn-backend
 cd /opt/cgc-lb-and-cdn-backend
 
 # Create environment file for the backend service
-cat > /opt/cgc-lb-and-cdn-backend/.env << 'ENVEOF'
+cat > /opt/cgc-lb-and-cdn-backend/.env << ENVEOF
 PORT=8080
 HOST=0.0.0.0
-GOOGLE_API_KEY=%s
-LEONARDO_API_KEY=%s
-FREEPIK_API_KEY=%s
-USE_DO_SPACES=%s
-DO_SPACES_LEFT_BUCKET=%s
-DO_SPACES_RIGHT_BUCKET=%s
-DO_SPACES_ENDPOINT=%s
-DO_SPACES_ACCESS_KEY=%s
-DO_SPACES_SECRET_KEY=%s
-DO_VALKEY_HOST=%s
-DO_VALKEY_PORT=%s
-DO_VALKEY_PASSWORD=%s
+GOOGLE_API_KEY=${GOOGLE_API_KEY}
+LEONARDO_API_KEY=${LEONARDO_API_KEY}
+FREEPIK_API_KEY=${FREEPIK_API_KEY}
+USE_DO_SPACES=${USE_DO_SPACES}
+DO_SPACES_LEFT_BUCKET=${DO_SPACES_LEFT_BUCKET}
+DO_SPACES_RIGHT_BUCKET=${DO_SPACES_RIGHT_BUCKET}
+DO_SPACES_ENDPOINT=${DO_SPACES_ENDPOINT}
+DO_SPACES_ACCESS_KEY=${DO_SPACES_ACCESS_KEY}
+DO_SPACES_SECRET_KEY=${DO_SPACES_SECRET_KEY}
+DO_VALKEY_HOST=${DO_VALKEY_HOST}
+DO_VALKEY_PORT=${DO_VALKEY_PORT}
+DO_VALKEY_PASSWORD=${DO_VALKEY_PASSWORD}
 ENVEOF
 
 # Create systemd service file for backend
@@ -664,8 +667,8 @@ CONSOLIDATED="/tmp/cgc-lb-and-cdn-logs-${TIMESTAMP}.log"
 
 # Upload to Spaces if s3cmd is configured
 if [ -f /root/.s3cfg ] && [ -n "${DO_SPACES_ACCESS_KEY}" ]; then
-  s3cmd put "$CONSOLIDATED" "s3://%s/logs/${HOSTNAME}/${TIMESTAMP}.log" 2>&1 && \
-    echo "✅ Logs uploaded to Spaces: s3://%s/logs/${HOSTNAME}/${TIMESTAMP}.log" || \
+  s3cmd put "$CONSOLIDATED" "s3://${DO_SPACES_LEFT_BUCKET}/logs/${HOSTNAME}/${TIMESTAMP}.log" 2>&1 && \
+    echo "✅ Logs uploaded to Spaces: s3://${DO_SPACES_LEFT_BUCKET}/logs/${HOSTNAME}/${TIMESTAMP}.log" || \
     echo "❌ Failed to upload logs to Spaces"
 
   # Update last upload timestamp
@@ -708,17 +711,19 @@ echo "Upload logs: /var/log/cgc-lb-and-cdn-log-upload.log"
 echo "Log upload interval: ${LOG_UPLOAD_INTERVAL_MINUTES} minutes"
 echo "================================"
 `,
-		// Deployment SHA (1 placeholder)
+		// All variables passed once at the beginning (13 placeholders total)
 		sha,
-		// Spaces credentials (for export and ENVCONF - 4 placeholders)
-		spacesAccessKey, spacesSecretKey, spacesAccessKey, spacesSecretKey,
-		// s3cmd configuration (2 placeholders)
-		spacesEndpoint, spacesEndpoint,
-		// Backend .env file (14 placeholders - added left/right buckets)
-		googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, leftBucket, rightBucket, spacesEndpoint,
-		spacesAccessKey, spacesSecretKey,
-		valkeyHost, valkeyPort, valkeyPassword,
-		// Log upload script s3cmd paths (2 placeholders)
-		leftBucket, leftBucket,
+		googleAPIKey,
+		leonardoAPIKey,
+		freepikAPIKey,
+		useDoSpaces,
+		leftBucket,
+		rightBucket,
+		spacesEndpoint,
+		spacesAccessKey,
+		spacesSecretKey,
+		valkeyHost,
+		valkeyPort,
+		valkeyPassword,
 	)
 }
