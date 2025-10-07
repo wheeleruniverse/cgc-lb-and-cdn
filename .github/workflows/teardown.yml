@@ -51,6 +51,9 @@ jobs:
         pulumi stack select dev
         echo "🗑️ Starting infrastructure teardown..." >> $GITHUB_STEP_SUMMARY
 
+        # Set SHA to "teardown" for config validation (actual value doesn't matter for destroy)
+        pulumi config set cgc-lb-and-cdn:sha "teardown"
+
         # Read domain from Pulumi config (has default in Pulumi.yaml)
         DOMAIN=$(pulumi config get cgc-lb-and-cdn:domain || echo "wheeleraiduel.online")
         echo "📋 Domain: $DOMAIN" >> $GITHUB_STEP_SUMMARY
