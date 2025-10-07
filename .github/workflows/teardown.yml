@@ -121,6 +121,10 @@ jobs:
           if pulumi state delete "urn:pulumi:dev::cgc-lb-and-cdn::digitalocean:index/vpc:Vpc::cgc-lb-and-cdn-vpc" 2>/dev/null; then
             echo "  🔧 Removed VPC from Pulumi state (VPC cannot be deleted via API)" >> $GITHUB_STEP_SUMMARY
           fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "❌ Infrastructure teardown failed - please check errors above" >> $GITHUB_STEP_SUMMARY
+          exit 1
         else
           # If only VPC deletion failed (expected), remove it from state
           if pulumi state delete "urn:pulumi:dev::cgc-lb-and-cdn::digitalocean:index/vpc:Vpc::cgc-lb-and-cdn-vpc" 2>/dev/null; then
