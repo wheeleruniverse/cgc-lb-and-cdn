@@ -93,7 +93,7 @@ func main() {
 				VpcUuid: vpc.ID(),
 				UserData: pulumi.All(valkeyCluster.Host, valkeyCluster.Port, valkeyCluster.Password, spaceBucket.Name, spaceBucket.Region).ApplyT(func(args []interface{}) string {
 					bucketName := args[3].(string)
-					return getFullStackUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, bucketName, bucketName, spaceBucketEndpoint, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string), spacesAccessKey, spacesSecretKey)
+					return getFullStackUserData(sha, googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, bucketName, bucketName, spaceBucketEndpoint, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string), spacesAccessKey, spacesSecretKey)
 				}).(pulumi.StringOutput),
 				// Tags removed due to permission issues
 			})
@@ -336,7 +336,7 @@ func convertDropletsToResources(droplets []*digitalocean.Droplet) []pulumi.Resou
 }
 
 // getFullStackUserData returns cloud-init script to deploy both backend and frontend on each droplet
-func getFullStackUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, leftBucket, rightBucket, spacesEndpoint, valkeyHost, valkeyPort, valkeyPassword, spacesAccessKey, spacesSecretKey string) string {
+func getFullStackUserData(sha, googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, leftBucket, rightBucket, spacesEndpoint, valkeyHost, valkeyPort, valkeyPassword, spacesAccessKey, spacesSecretKey string) string {
 	return fmt.Sprintf(`#!/bin/bash
 set -e
 
@@ -346,6 +346,7 @@ exec > >(tee -a "$LOGFILE") 2>&1
 
 echo "================================"
 echo "Cloud Portfolio Challenge LB and CDN Deployment Started: $(date)"
+echo "Deployment SHA: %s"
 echo "================================"
 
 # Set non-interactive mode for all apt operations
@@ -707,6 +708,8 @@ echo "Upload logs: /var/log/cgc-lb-and-cdn-log-upload.log"
 echo "Log upload interval: ${LOG_UPLOAD_INTERVAL_MINUTES} minutes"
 echo "================================"
 `,
+		// Deployment SHA (1 placeholder)
+		sha,
 		// Spaces credentials (for export and ENVCONF - 4 placeholders)
 		spacesAccessKey, spacesSecretKey, spacesAccessKey, spacesSecretKey,
 		// s3cmd configuration (2 placeholders)
