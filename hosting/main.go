@@ -138,15 +138,11 @@ func main() {
 			Size:    pulumi.String("lb-small"),
 			VpcUuid: vpc.ID(),
 
-			// Connect to both droplets (using All to ensure both have IPs)
-			DropletIds: pulumi.All(droplet1.Ipv4Address, droplet2.Ipv4Address, droplet1.ID(), droplet2.ID()).ApplyT(func(args []interface{}) []int {
-				// args[0] = droplet1 IP (ensures it's ready)
-				// args[1] = droplet2 IP (ensures it's ready)
-				// args[2] = droplet1 ID (pulumi.ID type)
-				// args[3] = droplet2 ID (pulumi.ID type)
-				id1Str := string(args[2].(pulumi.ID))
+			// Connect to both droplets - wait for IPs to be assigned first
+			DropletIds: pulumi.All(droplet1.ID(), droplet2.ID()).ApplyT(func(args []interface{}) []int {
+				id1Str := string(args[0].(pulumi.ID))
+				id2Str := string(args[1].(pulumi.ID))
 				id1, _ := strconv.Atoi(id1Str)
-				id2Str := string(args[3].(pulumi.ID))
 				id2, _ := strconv.Atoi(id2Str)
 				return []int{id1, id2}
 			}).(pulumi.IntArrayOutput),
@@ -188,7 +184,7 @@ func main() {
 				CookieName:       pulumi.String("lb"),
 				CookieTtlSeconds: pulumi.Int(300),
 			},
-		})
+		}, pulumi.DependsOn([]pulumi.Resource{droplet1, droplet2}))
 		if err != nil {
 			return err
 		}
