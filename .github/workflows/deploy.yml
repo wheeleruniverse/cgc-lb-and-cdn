@@ -69,7 +69,10 @@ jobs:
         # Deploy infrastructure (with optional droplet replacement)
         if [ "${{ inputs.force_replace_droplets }}" == "true" ]; then
           echo "🔄 Forcing droplet replacement for code updates..."
-          pulumi up --yes --replace 'urn:pulumi:dev::cgc-lb-and-cdn::digitalocean:index/droplet:Droplet::cgc-lb-and-cdn-droplet-1' --replace 'urn:pulumi:dev::cgc-lb-and-cdn::digitalocean:index/droplet:Droplet::cgc-lb-and-cdn-droplet-2'
+          echo "⚠️  Step 1: Destroying old droplets (brief downtime)..."
+          pulumi destroy --yes --target 'urn:pulumi:dev::cgc-lb-and-cdn::digitalocean:index/droplet:Droplet::cgc-lb-and-cdn-droplet-1' --target 'urn:pulumi:dev::cgc-lb-and-cdn::digitalocean:index/droplet:Droplet::cgc-lb-and-cdn-droplet-2' || echo "Droplets may already be deleted"
+          echo "⚠️  Step 2: Creating new droplets with latest code..."
+          pulumi up --yes
         else
           echo "📦 Deploying infrastructure changes..."
           pulumi up --yes
