@@ -142,10 +142,12 @@ func main() {
 			DropletIds: pulumi.All(droplet1.Ipv4Address, droplet2.Ipv4Address, droplet1.ID(), droplet2.ID()).ApplyT(func(args []interface{}) []int {
 				// args[0] = droplet1 IP (ensures it's ready)
 				// args[1] = droplet2 IP (ensures it's ready)
-				// args[2] = droplet1 ID
-				// args[3] = droplet2 ID
-				id1, _ := strconv.Atoi(args[2].(string))
-				id2, _ := strconv.Atoi(args[3].(string))
+				// args[2] = droplet1 ID (pulumi.ID type)
+				// args[3] = droplet2 ID (pulumi.ID type)
+				id1Str := string(args[2].(pulumi.ID))
+				id1, _ := strconv.Atoi(id1Str)
+				id2Str := string(args[3].(pulumi.ID))
+				id2, _ := strconv.Atoi(id2Str)
 				return []int{id1, id2}
 			}).(pulumi.IntArrayOutput),
 
