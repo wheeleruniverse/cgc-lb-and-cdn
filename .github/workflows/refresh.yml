@@ -1,0 +1,76 @@
+name: Refresh Infrastructure State
+
+on:
+  workflow_dispatch:
+
+env:
+  PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+  DIGITALOCEAN_TOKEN: ${{ secrets.DO_ACCESS_TOKEN }}
+  SPACES_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_ACCESS_KEY }}
+  SPACES_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET_KEY }}
+
+jobs:
+  refresh:
+    name: Refresh Pulumi State
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+        cache-dependency-path: hosting/go.sum
+
+    - name: Setup Pulumi CLI
+      uses: pulumi/actions@v4
+
+    - name: Build infrastructure program
+      working-directory: hosting
+      run: |
+        mkdir -p bin
+        go mod download
+        go build -o bin/cgc-lb-and-cdn .
+
+    - name: Refresh infrastructure state
+      working-directory: hosting
+      run: |
+        pulumi stack select dev
+        echo "🔄 Refreshing infrastructure state..." >> $GITHUB_STEP_SUMMARY
+
+        # Set SHA to "refresh" for config validation (doesn't matter for refresh)
+        pulumi config set cgc-lb-and-cdn:sha "refresh"
+
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📊 State Before Refresh" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        pulumi stack --show-urns 2>&1 | head -20 >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+        # Refresh state to match actual cloud resources
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🔄 Running Refresh" >> $GITHUB_STEP_SUMMARY
+        if pulumi refresh --yes; then
+          echo "✅ State refresh completed successfully!" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ State refresh failed - see logs above" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        fi
+
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📊 State After Refresh" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        pulumi stack --show-urns 2>&1 | head -20 >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### ℹ️ What This Did" >> $GITHUB_STEP_SUMMARY
+        echo "- Checked actual state of all resources in DigitalOcean" >> $GITHUB_STEP_SUMMARY
+        echo "- Updated Pulumi state to match reality" >> $GITHUB_STEP_SUMMARY
+        echo "- Removed any manually deleted resources from state" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "You can now run **Teardown** or **Deploy** safely." >> $GITHUB_STEP_SUMMARY
+      env:
+        PULUMI_STACK: dev
