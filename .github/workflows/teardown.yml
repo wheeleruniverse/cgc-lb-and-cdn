@@ -7,11 +7,6 @@ on:
         description: 'Type "DESTROY" to confirm teardown'
         required: true
         type: string
-      domain:
-        description: 'Domain name to clean up DNS records'
-        required: false
-        type: string
-        default: 'wheeleraiduel.online'
 
 env:
   PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
@@ -56,9 +51,16 @@ jobs:
         pulumi stack select dev
         echo "🗑️ Starting infrastructure teardown..." >> $GITHUB_STEP_SUMMARY
 
-        # Get domain from workflow input (has default value)
-        DOMAIN="${{ github.event.inputs.domain }}"
+        # Read domain from Pulumi config
+        DOMAIN=$(pulumi config get cgc-lb-and-cdn:domain || echo "wheeleraiduel.online")
         echo "📋 Domain: $DOMAIN" >> $GITHUB_STEP_SUMMARY
+
+        # Preserve existing SHA from Pulumi config (required for droplet name matching)
+        EXISTING_SHA=$(pulumi config get cgc-lb-and-cdn:sha || echo "")
+        if [ -n "$EXISTING_SHA" ]; then
+          echo "📌 Preserving SHA from state: $EXISTING_SHA" >> $GITHUB_STEP_SUMMARY
+          pulumi config set cgc-lb-and-cdn:sha "$EXISTING_SHA"
+        fi
 
         # Clean up auto-created DNS records (created by Let's Encrypt validation)
         echo "" >> $GITHUB_STEP_SUMMARY
