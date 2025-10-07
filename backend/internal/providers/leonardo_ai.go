@@ -105,7 +105,7 @@ func (lp *LeonardoAIProvider) Generate(ctx context.Context, req *models.ImageReq
 	}
 
 	// Step 2: Poll for completion
-	images, err := lp.pollForCompletion(ctx, generationID)
+	images, err := lp.pollForCompletion(ctx, generationID, req.Bucket)
 	if err != nil {
 		return nil, fmt.Errorf("failed to wait for completion: %w", err)
 	}
@@ -168,7 +168,7 @@ func (lp *LeonardoAIProvider) startGeneration(prompt string, count int) (string,
 }
 
 // pollForCompletion polls the API until generation is complete
-func (lp *LeonardoAIProvider) pollForCompletion(ctx context.Context, generationID string) ([]models.GeneratedImage, error) {
+func (lp *LeonardoAIProvider) pollForCompletion(ctx context.Context, generationID, bucketName string) ([]models.GeneratedImage, error) {
 	maxAttempts := 24 // 2 minutes with 5-second intervals
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
@@ -201,7 +201,7 @@ func (lp *LeonardoAIProvider) pollForCompletion(ctx context.Context, generationI
 			// Download and save images
 			var images []models.GeneratedImage
 			for i, img := range generation.GeneratedImages {
-				generatedImg, err := lp.saveImageFromURL(img.URL, "leonardo-ai")
+				generatedImg, err := lp.saveImageFromURL(img.URL, "leonardo-ai", bucketName)
 				if err != nil {
 					return nil, fmt.Errorf("failed to save image %d: %w", i+1, err)
 				}
@@ -226,7 +226,7 @@ func (lp *LeonardoAIProvider) pollForCompletion(ctx context.Context, generationI
 }
 
 // saveImageFromURL downloads and saves an image from a URL using shared BaseProvider method
-func (lp *LeonardoAIProvider) saveImageFromURL(imageURL, filePrefix string) (*models.GeneratedImage, error) {
+func (lp *LeonardoAIProvider) saveImageFromURL(imageURL, filePrefix, bucketName string) (*models.GeneratedImage, error) {
 	// Download image
 	resp, err := lp.httpClient.Get(imageURL)
 	if err != nil {
@@ -245,7 +245,7 @@ func (lp *LeonardoAIProvider) saveImageFromURL(imageURL, filePrefix string) (*mo
 	}
 
 	// Use shared BaseProvider method
-	return lp.BaseProvider.SaveImage(imageData, filePrefix)
+	return lp.BaseProvider.SaveImage(imageData, filePrefix, bucketName)
 }
 
 // LeonardoUserResponse represents the response from Leonardo AI /me endpoint

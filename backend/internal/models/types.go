@@ -13,6 +13,7 @@ type ImageRequest struct {
 	Metadata  map[string]string `json:"metadata,omitempty"`
 	RequestID string            `json:"request_id,omitempty"`
 	Timestamp time.Time         `json:"timestamp,omitempty"`
+	Bucket    string            `json:"bucket,omitempty"` // Target DO Spaces bucket
 }
 
 // ImageResponse represents the response from image generation
@@ -96,6 +97,7 @@ type ImageInfo struct {
 // ImagePairResponse represents a pair of images for comparison
 type ImagePairResponse struct {
 	PairID string    `json:"pair_id"`
+	Prompt string    `json:"prompt"`
 	Left   ImageInfo `json:"left"`
 	Right  ImageInfo `json:"right"`
 }
@@ -106,6 +108,7 @@ type ComparisonRatingRequest struct {
 	Winner  string `json:"winner" binding:"required"` // "left" or "right"
 	LeftID  string `json:"left_id" binding:"required"`
 	RightID string `json:"right_id" binding:"required"`
+	Prompt  string `json:"prompt,omitempty"`
 }
 
 // ComparisonRatingResponse represents the response to a rating submission

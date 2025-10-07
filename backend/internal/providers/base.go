@@ -120,15 +120,14 @@ func (bp *BaseProvider) RefreshQuota(ctx context.Context) error {
 }
 
 // SaveToSpaces uploads image data to DigitalOcean Spaces using direct HTTP
-func (bp *BaseProvider) SaveToSpaces(imageData []byte, filename, imageID string) (*models.GeneratedImage, error) {
+func (bp *BaseProvider) SaveToSpaces(imageData []byte, filename, imageID, bucketName string) (*models.GeneratedImage, error) {
 	// Get DO Spaces configuration
-	bucketName := os.Getenv("DO_SPACES_BUCKET")
 	endpoint := os.Getenv("DO_SPACES_ENDPOINT")
 	accessKey := os.Getenv("DO_SPACES_ACCESS_KEY")
 	secretKey := os.Getenv("DO_SPACES_SECRET_KEY")
 
 	if bucketName == "" || endpoint == "" || accessKey == "" || secretKey == "" {
-		return nil, fmt.Errorf("missing DO Spaces configuration (DO_SPACES_BUCKET, DO_SPACES_ENDPOINT, DO_SPACES_ACCESS_KEY, DO_SPACES_SECRET_KEY)")
+		return nil, fmt.Errorf("missing DO Spaces configuration (bucket, DO_SPACES_ENDPOINT, DO_SPACES_ACCESS_KEY, DO_SPACES_SECRET_KEY)")
 	}
 
 	// Construct URL for upload
@@ -184,13 +183,13 @@ func (bp *BaseProvider) SaveToSpaces(imageData []byte, filename, imageID string)
 }
 
 // SaveImage saves image data to DigitalOcean Spaces CDN (production only)
-func (bp *BaseProvider) SaveImage(imageData []byte, filePrefix string) (*models.GeneratedImage, error) {
+func (bp *BaseProvider) SaveImage(imageData []byte, filePrefix, bucketName string) (*models.GeneratedImage, error) {
 	// Generate unique identifiers
 	imageID := uuid.New().String()
 	filename := fmt.Sprintf("%s-%s.png", filePrefix, imageID)
 
 	// Always use DO Spaces (no local storage fallback)
-	return bp.SaveToSpaces(imageData, filename, imageID)
+	return bp.SaveToSpaces(imageData, filename, imageID, bucketName)
 }
 
 // MakeHTTPRequest is a helper for making HTTP requests with error handling

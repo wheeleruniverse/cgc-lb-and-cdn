@@ -45,12 +45,13 @@ func main() {
 	log.Printf("Starting server on %s", addr)
 	log.Printf("Available endpoints:")
 	log.Printf("  GET  /health - Health check")
-	log.Printf("  POST /api/v1/generate - Generate images")
+	log.Printf("  POST /api/v1/generate - Generate image pair")
 	log.Printf("  GET  /api/v1/status - Get provider status")
 	log.Printf("  GET  /api/v1/images/pair - Get random image pair")
 	log.Printf("  POST /api/v1/images/rate - Submit comparison rating")
 	log.Printf("  GET  /api/v1/leaderboard - Get provider leaderboard")
 	log.Printf("  GET  /api/v1/statistics - Get voting statistics")
+	log.Printf("  GET  /api/v1/images/winners?side=left|right - Get winning images")
 
 	if err := router.Run(addr); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
@@ -115,6 +116,7 @@ func setupRouter(imageHandler *handlers.ImageHandler) *gin.Engine {
 		api.POST("/images/rate", imageHandler.SubmitRating)
 		api.GET("/leaderboard", imageHandler.GetLeaderboard)
 		api.GET("/statistics", imageHandler.GetStatistics)
+		api.GET("/images/winners", imageHandler.GetWinners)
 	}
 
 	return router

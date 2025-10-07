@@ -18,12 +18,136 @@ import (
 	"github.com/google/uuid"
 )
 
+// prompts contains 100 unique image generation prompts
+var prompts = []string{
+	// Animals with Jobs
+	"A koala wearing a tiny firefighter's helmet, climbing a ladder to rescue a cat from a tree.",
+	"An elegant giraffe working as a professional violinist in a concert hall.",
+	"A team of squirrels in construction vests, building a miniature skyscraper out of acorns.",
+	"A hamster dressed as a mad scientist, running on a wheel that powers a small laser.",
+	"A chameleon wearing a detective trench coat, blending into a cluttered bookshelf.",
+	"A group of penguins in suits, presenting a quarterly report in a chilly boardroom.",
+	"An octopus barista, expertly making lattes with eight arms at a bustling coffee shop.",
+	"A wise owl in a professor's cap and gown, teaching a class of baby birds.",
+	"A majestic lion working as a librarian, quietly shelving books with a stern but fair expression.",
+	"A golden retriever wearing a hard hat and safety goggles, inspecting a construction site.",
+
+	// Fantasy and Mythical
+	"A friendly dragon, meticulously tending a garden of glowing, fantastical flowers.",
+	"A whimsical gnome architect, designing a house carved from a giant mushroom.",
+	"A griffin delivering mail to a tiny floating village in the sky.",
+	"An elegant fairy librarian, organizing a library of books with pages made of autumn leaves.",
+	"A family of yetis having a picnic on a snowy mountain peak.",
+	"A benevolent kraken playing chess against a tiny sailboat on a calm sea.",
+	"A unicorn in an enchanted forest, serving tea to woodland creatures.",
+	"A phoenix made of flowing molten glass, taking flight from a volcanic crater.",
+	"A mischievous satyr playing a pan flute that makes flowers instantly bloom.",
+	"A wise wizard using a sparkling wand to bake a cake for a child's birthday.",
+
+	// Sci-Fi and Futuristic
+	"A retro-futuristic robot, serving a cup of coffee at a space diner.",
+	"A bustling city where all the buildings are giant, glowing crystals.",
+	"A friendly alien tourist taking a selfie in front of the Eiffel Tower.",
+	"An astronaut in a classic spacesuit, fishing on a distant, peaceful planet.",
+	"A hovercraft shaped like a giant loaf of bread, delivering sandwiches.",
+	"A futuristic food truck selling \"stardust tacos\" in a neon-lit alleyway.",
+	"A cyborg with a heart of gold, building a birdhouse in a lush garden.",
+	"A family of robots on a road trip through a galaxy of colorful gas clouds.",
+	"A high-tech space port where ships are docked like planes at an airport.",
+	"A giant robot, holding a sign that says \"Please Recycle.\"",
+
+	// Nature and Outdoors
+	"A friendly-looking squirrel riding a unicycle on a path through an autumn forest.",
+	"A family of turtles enjoying a leisurely boat ride on a lily-pad pond.",
+	"A whimsical treehouse with a spiral staircase and glowing lanterns.",
+	"A vibrant field of sunflowers that turn to face the sun in a synchronized dance.",
+	"A calm river flowing through a canyon made of oversized, colorful geodes.",
+	"A curious fox peeking out from behind a vibrant, glowing waterfall.",
+	"A bustling beehive that looks like a miniature, bustling city.",
+	"A peaceful cottage nestled among giant, cloud-like lavender bushes.",
+	"A garden where all the plants are made of different types of candy.",
+	"A majestic whale with a glowing constellation pattern on its back, swimming in a starry ocean.",
+
+	// Objects with Personality
+	"A grumpy old toaster, trying to make the perfect toast.",
+	"A friendly, smiling cloud wearing a top hat and a monocle.",
+	"A vintage camera with a single, expressive eye, capturing a happy moment.",
+	"A pencil and eraser, walking hand-in-hand down a winding road of a sketchbook.",
+	"A happy, bouncing red ball, leaving a trail of rainbows.",
+	"A wise old teacup, sitting on a shelf, with a small steam cloud that tells stories.",
+	"A pair of mismatched socks, finally reunited after a long journey.",
+	"A stack of books, happily celebrating the first day of school.",
+	"A set of garden tools having a friendly conversation in a shed.",
+	"A tiny, glowing lightbulb having a brilliant idea.",
+
+	// Food and Drink
+	"A sushi chef, meticulously preparing a plate of sushi on a tiny, detailed stage.",
+	"A smiling ice cream cone, melting happily in the summer sun.",
+	"A family of pastries, having a tea party in a whimsical kitchen.",
+	"A friendly bowl of ramen, with noodles that look like tiny, smiling worms.",
+	"A happy, bubbly soda can, playing a video game.",
+	"A slice of pizza, wearing a tiny superhero cape, ready to save the day.",
+	"A group of vegetables, forming a band and playing instruments made of kitchen utensils.",
+	"A cheerful cup of hot chocolate, with marshmallows that look like fluffy clouds.",
+	"A tiny, adventurous strawberry, scaling a mountain of whipped cream.",
+	"A taco, dressed as a detective, investigating a case of missing salsa.",
+
+	// Transportation and Vehicles
+	"A hot air balloon shaped like a giant ice cream sundae, floating over a city.",
+	"A whimsical train with a teapot for a boiler, traveling through a teacup landscape.",
+	"A tiny submarine, exploring a beautiful coral reef made of gemstones.",
+	"A friendly, old-fashioned bicycle, with a flower basket full of sunshine.",
+	"A spaceship shaped like a rubber duck, flying through a starry, cosmic bath.",
+	"A vintage car with a garden growing in its trunk.",
+	"A cheerful sailboat with a sail made of patchwork quilts.",
+	"A hot dog vendor cart, being pulled by a team of tiny, happy sausages.",
+	"A cheerful, red fire truck with a hose that sprays confetti.",
+	"A sleek, futuristic racing car, driving on a track made of light.",
+
+	// Abstract and Surreal
+	"A landscape where the sky is a swirling vortex of vibrant, pastel colors.",
+	"A whimsical clock with hands that point to feelings instead of hours.",
+	"A staircase that leads to a door opening into a sky full of fish.",
+	"A single, glowing feather, floating in a room filled with giant, sparkling bubbles.",
+	"A tree with roots that are also the branches, creating a perfect circle.",
+	"A serene lake that reflects a different, fantastical world.",
+	"A quiet room where all the furniture is made of different clouds.",
+	"A majestic mountain range made of neatly folded blankets.",
+	"A bookshelf where the books are filled with liquid light.",
+	"A city skyline where buildings are made of giant, interlocking gears.",
+
+	// Sports and Hobbies
+	"A group of teacups, playing a game of miniature golf.",
+	"A family of teddy bears, having a grand picnic and playing frisbee.",
+	"A happy, colorful robot, painting a masterpiece on an oversized canvas.",
+	"A trio of cats, expertly playing an intense game of chess.",
+	"A cheerful, bouncing basketball, practicing its free throws.",
+	"A group of friendly monsters, having a dance-off in a disco.",
+	"A tiny, adventurous snail, hiking up a giant mountain.",
+	"A family of garden gnomes, having a friendly race on their tricycles.",
+	"A smiling, happy sun, playing hide-and-seek with the moon.",
+	"A friendly ghost, learning to play the guitar.",
+
+	// Everyday Life with a Twist
+	"A busy city street where the cars are tiny, flying hot dogs.",
+	"A serene park bench where a pigeon and a squirrel are reading a newspaper together.",
+	"A cozy living room where a dog and a cat are sharing popcorn and watching a movie.",
+	"A bustling laundromat where the washing machines are giant, smiling fishbowls.",
+	"A family of socks, hanging out on a clothesline and telling jokes.",
+	"A happy, bubbling bathtub, full of bubbles shaped like stars.",
+	"A quiet library where the books float down to you on a magical breeze.",
+	"A busy office where all the computers are powered by tiny, industrious gnomes.",
+	"A peaceful night sky where the stars are actually tiny, glowing origami stars.",
+	"A sunny day at the beach, where the sandcastles are made of colorful jelly.",
+}
+
 // ImageHandler handles image generation requests
 type ImageHandler struct {
-	orchestrator  agents.OrchestratorAgent
-	valkeyClient  *storage.ValkeyClient
-	cdnEndpoint   string
-	spacesBucket  string
+	orchestrator agents.OrchestratorAgent
+	valkeyClient *storage.ValkeyClient
+	cdnEndpoint  string
+	leftBucket   string
+	rightBucket  string
 }
 
 // NewImageHandler creates a new image handler
@@ -33,17 +157,28 @@ func NewImageHandler(orchestrator agents.OrchestratorAgent, valkeyClient *storag
 		cdnEndpoint = "nyc3.digitaloceanspaces.com"
 	}
 
-	spacesBucket := os.Getenv("DO_SPACES_BUCKET")
-	if spacesBucket == "" {
-		spacesBucket = "cgc-lb-and-cdn-content"
+	leftBucket := os.Getenv("DO_SPACES_LEFT_BUCKET")
+	if leftBucket == "" {
+		leftBucket = "cgc-battle-left"
+	}
+
+	rightBucket := os.Getenv("DO_SPACES_RIGHT_BUCKET")
+	if rightBucket == "" {
+		rightBucket = "cgc-battle-right"
 	}
 
 	return &ImageHandler{
 		orchestrator: orchestrator,
 		valkeyClient: valkeyClient,
 		cdnEndpoint:  cdnEndpoint,
-		spacesBucket: spacesBucket,
+		leftBucket:   leftBucket,
+		rightBucket:  rightBucket,
 	}
+}
+
+// getRandomPrompt returns a random prompt from the prompts list
+func getRandomPrompt() string {
+	return prompts[rand.Intn(len(prompts))]
 }
 
 // GenerateImage handles POST /generate requests
@@ -59,23 +194,21 @@ func (h *ImageHandler) GenerateImage(c *gin.Context) {
 	}
 
 	// Set request metadata
-	req.RequestID = uuid.New().String()
+	requestID := uuid.New().String()
+	pairID := uuid.New().String()
+	req.RequestID = requestID
 	req.Timestamp = time.Now()
 
-	// Validate request
+	// Use random prompt if none provided
 	if req.Prompt == "" {
-		utils.RespondWithError(c, http.StatusBadRequest, "Prompt is required", "MISSING_PROMPT", nil)
-		return
+		req.Prompt = getRandomPrompt()
+		fmt.Printf("[INFO] Using random prompt: %s\n", req.Prompt)
 	}
 
-	// Set defaults
-	if req.Count <= 0 {
-		req.Count = 4
-	} else if req.Count > 4 {
-		req.Count = 4 // Limit to prevent abuse
-	}
+	// Generate 2 images from the same provider in a single call
+	req.Count = 2
+	req.Bucket = h.leftBucket // Use left bucket as default storage
 
-	// Execute through orchestrator
 	result, err := h.orchestrator.Execute(c.Request.Context(), &req)
 	if err != nil {
 		utils.RespondWithError(c, http.StatusInternalServerError, "Image generation failed", "GENERATION_FAILED", map[string]string{
@@ -84,19 +217,50 @@ func (h *ImageHandler) GenerateImage(c *gin.Context) {
 		return
 	}
 
-	// Type assert the result
 	response, ok := result.(*models.ImageResponse)
-	if !ok {
-		utils.RespondWithError(c, http.StatusInternalServerError, "Invalid response type from orchestrator", "INVALID_RESPONSE", nil)
+	if !ok || len(response.Images) < 2 {
+		utils.RespondWithError(c, http.StatusInternalServerError, "Invalid response - need 2 images", "INVALID_RESPONSE", nil)
 		return
 	}
 
-	// Return success response
-	utils.RespondWithSuccess(c, response, "Images generated successfully", map[string]string{
+	// First image is "left", second is "right"
+	leftImage := response.Images[0]
+	rightImage := response.Images[1]
+	timestamp := time.Now()
+
+	// Store the pair in Valkey
+	if h.valkeyClient != nil {
+		pair := &storage.ImagePair{
+			PairID:    pairID,
+			Prompt:    req.Prompt,
+			Provider:  response.Provider,
+			LeftURL:   leftImage.URL,
+			RightURL:  rightImage.URL,
+			LeftID:    leftImage.ID,
+			RightID:   rightImage.ID,
+			Timestamp: timestamp,
+		}
+
+		if err := h.valkeyClient.StoreImagePair(c.Request.Context(), pair); err != nil {
+			fmt.Printf("[ERROR] Failed to store image pair: %v\n", err)
+			// Continue anyway - don't fail the request
+		} else {
+			fmt.Printf("[PAIR] Stored in Valkey - Pair: %s, Prompt: %s, Provider: %s\n", pairID, req.Prompt, response.Provider)
+		}
+	}
+
+	// Return success response with both images
+	utils.RespondWithSuccess(c, gin.H{
+		"pair_id":     pairID,
+		"prompt":      req.Prompt,
+		"provider":    response.Provider,
+		"left_image":  leftImage,
+		"right_image": rightImage,
+		"timestamp":   timestamp.Format(time.RFC3339),
+	}, "Image pair generated successfully", map[string]string{
+		"pair_id":    pairID,
+		"request_id": requestID,
 		"provider":   response.Provider,
-		"count":      string(rune(len(response.Images))),
-		"duration":   response.Duration.String(),
-		"request_id": response.RequestID,
 	})
 }
 
@@ -173,33 +337,44 @@ func (h *ImageHandler) HealthCheck(c *gin.Context) {
 
 // GetImagePair handles GET /images/pair requests
 func (h *ImageHandler) GetImagePair(c *gin.Context) {
-	images, err := h.getRandomImages(2)
+	if h.valkeyClient == nil {
+		utils.RespondWithError(c, http.StatusServiceUnavailable, "Image pairs unavailable", "VALKEY_UNAVAILABLE", nil)
+		return
+	}
+
+	// Get random pair from Valkey
+	pair, err := h.valkeyClient.GetRandomImagePair(c.Request.Context())
 	if err != nil {
-		utils.RespondWithError(c, http.StatusInternalServerError, "Failed to get random images", "IMAGES_UNAVAILABLE", map[string]string{
+		utils.RespondWithError(c, http.StatusInternalServerError, "Failed to get random image pair", "PAIR_UNAVAILABLE", map[string]string{
 			"error": err.Error(),
 		})
 		return
 	}
 
-	if len(images) < 2 {
-		utils.RespondWithError(c, http.StatusServiceUnavailable, "Not enough images available", "INSUFFICIENT_IMAGES", map[string]string{
-			"available": fmt.Sprintf("%d", len(images)),
-			"required":  "2",
-		})
-		return
-	}
+	// Extract provider from image IDs (e.g., "freepik-uuid" -> "freepik")
+	leftProvider := extractProviderFromFilename(pair.LeftID)
+	rightProvider := extractProviderFromFilename(pair.RightID)
 
-	pairID := uuid.New().String()
 	response := models.ImagePairResponse{
-		PairID: pairID,
-		Left:   images[0],
-		Right:  images[1],
+		PairID: pair.PairID,
+		Prompt: pair.Prompt,
+		Left: models.ImageInfo{
+			ID:       pair.LeftID,
+			URL:      pair.LeftURL,
+			Provider: leftProvider,
+		},
+		Right: models.ImageInfo{
+			ID:       pair.RightID,
+			URL:      pair.RightURL,
+			Provider: rightProvider,
+		},
 	}
 
 	utils.RespondWithSuccess(c, response, "Image pair retrieved successfully", map[string]string{
-		"pair_id":  pairID,
-		"left_id":  images[0].ID,
-		"right_id": images[1].ID,
+		"pair_id":  pair.PairID,
+		"prompt":   pair.Prompt,
+		"left_id":  pair.LeftID,
+		"right_id": pair.RightID,
 	})
 }
 
@@ -227,13 +402,14 @@ func (h *ImageHandler) SubmitRating(c *gin.Context) {
 			Winner:  req.Winner,
 			LeftID:  req.LeftID,
 			RightID: req.RightID,
+			Prompt:  req.Prompt,
 		}
 
 		if err := h.valkeyClient.RecordVote(c.Request.Context(), vote); err != nil {
 			fmt.Printf("[ERROR] Failed to record vote in Valkey: %v\n", err)
 			// Continue anyway - don't fail the request if Valkey is down
 		} else {
-			fmt.Printf("[VOTE] Recorded in Valkey - Pair: %s, Winner: %s\n", req.PairID, req.Winner)
+			fmt.Printf("[VOTE] Recorded in Valkey - Pair: %s, Winner: %s, Prompt: %s\n", req.PairID, req.Winner, req.Prompt)
 		}
 	}
 
@@ -250,75 +426,6 @@ func (h *ImageHandler) SubmitRating(c *gin.Context) {
 		"winner":  req.Winner,
 	})
 }
-
-// getRandomImages returns a slice of random images from the CDN
-func (h *ImageHandler) getRandomImages(count int) ([]models.ImageInfo, error) {
-	// Hardcoded list of pre-generated images
-	// In production, this could come from a database or Spaces bucket listing
-	imageFiles := []string{
-		"leonardo-ai-7b9f4e11-3725-4723-b696-96da7a6cdf26.png",
-		"leonardo-ai-b1b7a068-3ce3-4df0-a164-42a33db1e556.png",
-		"leonardo-ai-e0f437af-3b6a-4d17-8cca-a5cc220e6442.png",
-		"leonardo-ai-eb3fa3cd-c254-453c-a475-a3480c2b1ef6.png",
-		"leonardo-ai-61028ab2-605f-4670-9a52-c4f1a34dbcbc.png",
-		"leonardo-ai-d12e8720-ef07-4e7f-adb8-1b3fff3f1683.png",
-		"leonardo-ai-7e9eb824-2d63-46fb-a8ca-954e008789f6.png",
-		"leonardo-ai-79243f3b-5271-4769-a7e5-9fe89311a4c4.png",
-		"leonardo-ai-053cb0ad-f7b6-465b-b286-ef2e1244685b.png",
-		"leonardo-ai-bb9fbaf3-6bf6-4cb2-ba55-3b61e4bf15cb.png",
-		"freepik-f1152da5-e707-4d84-9b9d-4c7d584187a2.png",
-		"freepik-7f8bd76c-2eaa-4133-84f9-cc1f640146d8.png",
-		"freepik-16b577b0-8fff-486c-9171-141a9fe035c7.png",
-		"freepik-e3ba8750-4328-4f7e-8e64-6119b9004065.png",
-		"leonardo-ai-ca5dee0f-ada7-42d2-877f-0d531acd8b95.png",
-		"leonardo-ai-9a5edfcc-d443-4038-8b3c-01ffa843d672.png",
-		"google-imagen-61edb395-7c9d-49c6-9129-5e92678df1c8.png",
-		"freepik-eceff6ab-e8dc-4697-9fe5-fa3cb4708935.png",
-		"freepik-bed5064a-8b5b-43b3-8c6c-8564be77c2da.png",
-		"google-imagen-52ec5670-57a3-4808-925b-9be6db2c24bb.png",
-		"google-imagen-a98440c6-76a7-4e9c-a9ee-9aaddd00a1a6.png",
-		"freepik-11053ba3-4bc3-45b8-b868-74e02f8c7d46.png",
-		"freepik-228a3550-ce0b-4668-804f-6437d52c91a4.png",
-	}
-
-	if len(imageFiles) == 0 {
-		return nil, fmt.Errorf("no image files available")
-	}
-
-	// Shuffle the slice
-	rand.Shuffle(len(imageFiles), func(i, j int) {
-		imageFiles[i], imageFiles[j] = imageFiles[j], imageFiles[i]
-	})
-
-	// Take the requested count
-	if count > len(imageFiles) {
-		count = len(imageFiles)
-	}
-
-	var images []models.ImageInfo
-	for i := 0; i < count; i++ {
-		filename := imageFiles[i]
-
-		// Extract provider from filename (e.g., "freepik-uuid.png" -> "freepik")
-		provider := extractProviderFromFilename(filename)
-
-		// Construct CDN URL
-		cdnURL := fmt.Sprintf("https://%s.%s/%s", h.spacesBucket, h.cdnEndpoint, filename)
-
-		imageInfo := models.ImageInfo{
-			ID:       strings.TrimSuffix(filename, ".png"),
-			Filename: filename,
-			Path:     cdnURL,
-			URL:      cdnURL,
-			Provider: provider,
-			Size:     0, // Size not available without fetching from CDN
-		}
-		images = append(images, imageInfo)
-	}
-
-	return images, nil
-}
-
 
 // GetLeaderboard handles GET /leaderboard requests
 func (h *ImageHandler) GetLeaderboard(c *gin.Context) {
@@ -398,6 +505,65 @@ func (h *ImageHandler) GetStatistics(c *gin.Context) {
 		"total_votes": totalVotes,
 		"timestamp":   time.Now().UTC().Format(time.RFC3339),
 	}, "Statistics retrieved successfully", nil)
+}
+
+// GetWinners handles GET /images/winners requests
+func (h *ImageHandler) GetWinners(c *gin.Context) {
+	if h.valkeyClient == nil {
+		utils.RespondWithError(c, http.StatusServiceUnavailable, "Winners unavailable", "VALKEY_UNAVAILABLE", nil)
+		return
+	}
+
+	// Get side parameter (default to "left")
+	side := c.DefaultQuery("side", "left")
+	if side != "left" && side != "right" {
+		utils.RespondWithError(c, http.StatusBadRequest, "Invalid side parameter", "INVALID_SIDE", map[string]string{
+			"side":    side,
+			"allowed": "left, right",
+		})
+		return
+	}
+
+	winningPairs, err := h.valkeyClient.GetWinningImages(c.Request.Context(), side)
+	if err != nil {
+		utils.RespondWithError(c, http.StatusInternalServerError, "Failed to get winners", "WINNERS_ERROR", map[string]string{
+			"error": err.Error(),
+			"side":  side,
+		})
+		return
+	}
+
+	// Transform to response format
+	type WinnerImage struct {
+		ImageURL  string `json:"image_url"`
+		Prompt    string `json:"prompt"`
+		Provider  string `json:"provider"`
+		PairID    string `json:"pair_id"`
+		Timestamp string `json:"timestamp"`
+	}
+
+	var winners []WinnerImage
+	for _, pair := range winningPairs {
+		imageURL := pair.LeftURL
+		if side == "right" {
+			imageURL = pair.RightURL
+		}
+
+		winners = append(winners, WinnerImage{
+			ImageURL:  imageURL,
+			Prompt:    pair.Prompt,
+			Provider:  pair.Provider,
+			PairID:    pair.PairID,
+			Timestamp: pair.Timestamp.Format(time.RFC3339),
+		})
+	}
+
+	utils.RespondWithSuccess(c, gin.H{
+		"winners":   winners,
+		"count":     len(winners),
+		"side":      side,
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	}, fmt.Sprintf("%s winners retrieved successfully", strings.Title(side)), nil)
 }
 
 // extractProviderFromFilename extracts the provider name from the filename

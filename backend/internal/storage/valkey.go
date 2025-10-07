@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
 	"time"
 
@@ -21,15 +22,28 @@ type Vote struct {
 	Winner    string    `json:"winner"`
 	LeftID    string    `json:"left_id"`
 	RightID   string    `json:"right_id"`
+	Prompt    string    `json:"prompt"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+// ImagePair represents a pair of images generated from the same prompt
+type ImagePair struct {
+	PairID    string    `json:"pair_id"`
+	Prompt    string    `json:"prompt"`
+	Provider  string    `json:"provider"`
+	LeftURL   string    `json:"left_url"`
+	RightURL  string    `json:"right_url"`
+	LeftID    string    `json:"left_id"`
+	RightID   string    `json:"right_id"`
 	Timestamp time.Time `json:"timestamp"`
 }
 
 // ProviderStats represents aggregated statistics for a provider
 type ProviderStats struct {
-	Provider   string `json:"provider"`
-	Wins       int64  `json:"wins"`
-	Losses     int64  `json:"losses"`
-	TotalVotes int64  `json:"total_votes"`
+	Provider   string  `json:"provider"`
+	Wins       int64   `json:"wins"`
+	Losses     int64   `json:"losses"`
+	TotalVotes int64   `json:"total_votes"`
 	WinRate    float64 `json:"win_rate"`
 }
 
@@ -46,9 +60,9 @@ func NewValkeyClient() (*ValkeyClient, error) {
 	addr := fmt.Sprintf("%s:%s", host, port)
 
 	client := redis.NewClient(&redis.Options{
-		Addr:     addr,
-		Password: password,
-		DB:       0,
+		Addr:      addr,
+		Password:  password,
+		DB:        0,
 		TLSConfig: nil, // Valkey uses TLS by default on DO
 	})
 
@@ -209,4 +223,123 @@ func (v *ValkeyClient) GetRecentVotes(ctx context.Context, limit int64) ([]*Vote
 // Close closes the Valkey client connection
 func (v *ValkeyClient) Close() error {
 	return v.client.Close()
+}
+
+// StoreImagePair stores an image pair in Valkey
+func (v *ValkeyClient) StoreImagePair(ctx context.Context, pair *ImagePair) error {
+	// Store pair with unique key
+	pairKey := fmt.Sprintf("pair:%s", pair.PairID)
+	pairJSON, err := json.Marshal(pair)
+	if err != nil {
+		return fmt.Errorf("failed to marshal pair: %w", err)
+	}
+
+	// Store pair (no expiration - we want to keep all pairs)
+	if err := v.client.Set(ctx, pairKey, pairJSON, 0).Err(); err != nil {
+		return fmt.Errorf("failed to store pair: %w", err)
+	}
+
+	// Add pair ID to the list of all pairs for random selection
+	if err := v.client.LPush(ctx, "pairs:all", pair.PairID).Err(); err != nil {
+		return fmt.Errorf("failed to add to pairs list: %w", err)
+	}
+
+	return nil
+}
+
+// GetRandomImagePair retrieves a random image pair from Valkey
+func (v *ValkeyClient) GetRandomImagePair(ctx context.Context) (*ImagePair, error) {
+	// Get a random pair ID from the list
+	pairID, err := v.client.LIndex(ctx, "pairs:all", 0).Result()
+	if err == redis.Nil {
+		return nil, fmt.Errorf("no pairs available")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get random pair ID: %w", err)
+	}
+
+	// Get random index
+	count, err := v.client.LLen(ctx, "pairs:all").Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pairs count: %w", err)
+	}
+
+	if count == 0 {
+		return nil, fmt.Errorf("no pairs available")
+	}
+
+	// Get random pair ID
+	randomIndex := rand.Int63n(count)
+	pairID, err = v.client.LIndex(ctx, "pairs:all", randomIndex).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get random pair ID: %w", err)
+	}
+
+	// Retrieve the pair
+	pairKey := fmt.Sprintf("pair:%s", pairID)
+	pairJSON, err := v.client.Get(ctx, pairKey).Result()
+	if err == redis.Nil {
+		return nil, fmt.Errorf("pair not found: %s", pairID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pair: %w", err)
+	}
+
+	var pair ImagePair
+	if err := json.Unmarshal([]byte(pairJSON), &pair); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal pair: %w", err)
+	}
+
+	return &pair, nil
+}
+
+// GetWinningImages retrieves all images that won their battles for the specified side
+// side parameter should be "left" or "right"
+func (v *ValkeyClient) GetWinningImages(ctx context.Context, side string) ([]ImagePair, error) {
+	// Validate side parameter
+	if side != "left" && side != "right" {
+		return nil, fmt.Errorf("invalid side parameter: must be 'left' or 'right'")
+	}
+
+	// Get all votes
+	voteStrings, err := v.client.LRange(ctx, "votes:all", 0, -1).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get votes: %w", err)
+	}
+
+	// Track winning images by pair ID
+	winningPairIDs := make(map[string]bool)
+	for _, voteStr := range voteStrings {
+		var vote Vote
+		if err := json.Unmarshal([]byte(voteStr), &vote); err != nil {
+			continue // Skip malformed votes
+		}
+
+		// Only include winners for the specified side
+		if vote.Winner == side {
+			winningPairIDs[vote.PairID] = true
+		}
+	}
+
+	// Retrieve the winning pairs
+	var winningPairs []ImagePair
+	for pairID := range winningPairIDs {
+		pairKey := fmt.Sprintf("pair:%s", pairID)
+		pairJSON, err := v.client.Get(ctx, pairKey).Result()
+		if err == redis.Nil {
+			continue // Pair no longer exists
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to get pair %s: %w", pairID, err)
+		}
+
+		var pair ImagePair
+		if err := json.Unmarshal([]byte(pairJSON), &pair); err != nil {
+			continue // Skip malformed pairs
+		}
+
+		winningPairs = append(winningPairs, pair)
+	}
+
+	return winningPairs, nil
 }
