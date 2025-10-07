@@ -6,12 +6,12 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"cgc-image-service/internal/agents"
 	"cgc-image-service/internal/models"
+	"cgc-image-service/internal/storage"
 	"cgc-image-service/pkg/utils"
 
 	"github.com/gin-gonic/gin"
@@ -20,13 +20,29 @@ import (
 
 // ImageHandler handles image generation requests
 type ImageHandler struct {
-	orchestrator agents.OrchestratorAgent
+	orchestrator  agents.OrchestratorAgent
+	valkeyClient  *storage.ValkeyClient
+	cdnEndpoint   string
+	spacesBucket  string
 }
 
 // NewImageHandler creates a new image handler
-func NewImageHandler(orchestrator agents.OrchestratorAgent) *ImageHandler {
+func NewImageHandler(orchestrator agents.OrchestratorAgent, valkeyClient *storage.ValkeyClient) *ImageHandler {
+	cdnEndpoint := os.Getenv("DO_SPACES_ENDPOINT")
+	if cdnEndpoint == "" {
+		cdnEndpoint = "nyc3.digitaloceanspaces.com"
+	}
+
+	spacesBucket := os.Getenv("DO_SPACES_BUCKET")
+	if spacesBucket == "" {
+		spacesBucket = "cgc-lb-and-cdn-content"
+	}
+
 	return &ImageHandler{
 		orchestrator: orchestrator,
+		valkeyClient: valkeyClient,
+		cdnEndpoint:  cdnEndpoint,
+		spacesBucket: spacesBucket,
 	}
 }
 
@@ -204,10 +220,22 @@ func (h *ImageHandler) SubmitRating(c *gin.Context) {
 		return
 	}
 
-	// Here you could store the rating in a database
-	// For now, we'll just log it and return success
-	fmt.Printf("[RATING] Pair: %s, Winner: %s, Left: %s, Right: %s\n",
-		req.PairID, req.Winner, req.LeftID, req.RightID)
+	// Store vote in Valkey
+	if h.valkeyClient != nil {
+		vote := &storage.Vote{
+			PairID:  req.PairID,
+			Winner:  req.Winner,
+			LeftID:  req.LeftID,
+			RightID: req.RightID,
+		}
+
+		if err := h.valkeyClient.RecordVote(c.Request.Context(), vote); err != nil {
+			fmt.Printf("[ERROR] Failed to record vote in Valkey: %v\n", err)
+			// Continue anyway - don't fail the request if Valkey is down
+		} else {
+			fmt.Printf("[VOTE] Recorded in Valkey - Pair: %s, Winner: %s\n", req.PairID, req.Winner)
+		}
+	}
 
 	response := models.ComparisonRatingResponse{
 		Success:   true,
@@ -223,24 +251,38 @@ func (h *ImageHandler) SubmitRating(c *gin.Context) {
 	})
 }
 
-// getRandomImages returns a slice of random images from the images directory
+// getRandomImages returns a slice of random images from the CDN
 func (h *ImageHandler) getRandomImages(count int) ([]models.ImageInfo, error) {
-	imagesDir := "images"
-
-	files, err := os.ReadDir(imagesDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read images directory: %w", err)
-	}
-
-	var imageFiles []os.DirEntry
-	for _, file := range files {
-		if !file.IsDir() && isImageFile(file.Name()) {
-			imageFiles = append(imageFiles, file)
-		}
+	// Hardcoded list of pre-generated images
+	// In production, this could come from a database or Spaces bucket listing
+	imageFiles := []string{
+		"leonardo-ai-7b9f4e11-3725-4723-b696-96da7a6cdf26.png",
+		"leonardo-ai-b1b7a068-3ce3-4df0-a164-42a33db1e556.png",
+		"leonardo-ai-e0f437af-3b6a-4d17-8cca-a5cc220e6442.png",
+		"leonardo-ai-eb3fa3cd-c254-453c-a475-a3480c2b1ef6.png",
+		"leonardo-ai-61028ab2-605f-4670-9a52-c4f1a34dbcbc.png",
+		"leonardo-ai-d12e8720-ef07-4e7f-adb8-1b3fff3f1683.png",
+		"leonardo-ai-7e9eb824-2d63-46fb-a8ca-954e008789f6.png",
+		"leonardo-ai-79243f3b-5271-4769-a7e5-9fe89311a4c4.png",
+		"leonardo-ai-053cb0ad-f7b6-465b-b286-ef2e1244685b.png",
+		"leonardo-ai-bb9fbaf3-6bf6-4cb2-ba55-3b61e4bf15cb.png",
+		"freepik-f1152da5-e707-4d84-9b9d-4c7d584187a2.png",
+		"freepik-7f8bd76c-2eaa-4133-84f9-cc1f640146d8.png",
+		"freepik-16b577b0-8fff-486c-9171-141a9fe035c7.png",
+		"freepik-e3ba8750-4328-4f7e-8e64-6119b9004065.png",
+		"leonardo-ai-ca5dee0f-ada7-42d2-877f-0d531acd8b95.png",
+		"leonardo-ai-9a5edfcc-d443-4038-8b3c-01ffa843d672.png",
+		"google-imagen-61edb395-7c9d-49c6-9129-5e92678df1c8.png",
+		"freepik-eceff6ab-e8dc-4697-9fe5-fa3cb4708935.png",
+		"freepik-bed5064a-8b5b-43b3-8c6c-8564be77c2da.png",
+		"google-imagen-52ec5670-57a3-4808-925b-9be6db2c24bb.png",
+		"google-imagen-a98440c6-76a7-4e9c-a9ee-9aaddd00a1a6.png",
+		"freepik-11053ba3-4bc3-45b8-b868-74e02f8c7d46.png",
+		"freepik-228a3550-ce0b-4668-804f-6437d52c91a4.png",
 	}
 
 	if len(imageFiles) == 0 {
-		return nil, fmt.Errorf("no image files found")
+		return nil, fmt.Errorf("no image files available")
 	}
 
 	// Shuffle the slice
@@ -255,22 +297,21 @@ func (h *ImageHandler) getRandomImages(count int) ([]models.ImageInfo, error) {
 
 	var images []models.ImageInfo
 	for i := 0; i < count; i++ {
-		file := imageFiles[i]
-		info, err := file.Info()
-		if err != nil {
-			continue
-		}
+		filename := imageFiles[i]
 
 		// Extract provider from filename (e.g., "freepik-uuid.png" -> "freepik")
-		provider := extractProviderFromFilename(file.Name())
+		provider := extractProviderFromFilename(filename)
+
+		// Construct CDN URL
+		cdnURL := fmt.Sprintf("https://%s.%s/%s", h.spacesBucket, h.cdnEndpoint, filename)
 
 		imageInfo := models.ImageInfo{
-			ID:       strings.TrimSuffix(file.Name(), filepath.Ext(file.Name())),
-			Filename: file.Name(),
-			Path:     filepath.Join(imagesDir, file.Name()),
-			URL:      fmt.Sprintf("/images/%s", file.Name()),
+			ID:       strings.TrimSuffix(filename, ".png"),
+			Filename: filename,
+			Path:     cdnURL,
+			URL:      cdnURL,
 			Provider: provider,
-			Size:     info.Size(),
+			Size:     0, // Size not available without fetching from CDN
 		}
 		images = append(images, imageInfo)
 	}
@@ -278,10 +319,85 @@ func (h *ImageHandler) getRandomImages(count int) ([]models.ImageInfo, error) {
 	return images, nil
 }
 
-// isImageFile checks if a file is an image based on its extension
-func isImageFile(filename string) bool {
-	ext := strings.ToLower(filepath.Ext(filename))
-	return ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" || ext == ".webp"
+
+// GetLeaderboard handles GET /leaderboard requests
+func (h *ImageHandler) GetLeaderboard(c *gin.Context) {
+	if h.valkeyClient == nil {
+		utils.RespondWithError(c, http.StatusServiceUnavailable, "Leaderboard unavailable", "VALKEY_UNAVAILABLE", nil)
+		return
+	}
+
+	stats, err := h.valkeyClient.GetProviderStats(c.Request.Context())
+	if err != nil {
+		utils.RespondWithError(c, http.StatusInternalServerError, "Failed to get leaderboard", "LEADERBOARD_ERROR", map[string]string{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Convert map to sorted slice
+	type LeaderboardEntry struct {
+		Provider   string  `json:"provider"`
+		Wins       int64   `json:"wins"`
+		Losses     int64   `json:"losses"`
+		TotalVotes int64   `json:"total_votes"`
+		WinRate    float64 `json:"win_rate"`
+	}
+
+	leaderboard := make([]LeaderboardEntry, 0, len(stats))
+	for _, stat := range stats {
+		leaderboard = append(leaderboard, LeaderboardEntry{
+			Provider:   stat.Provider,
+			Wins:       stat.Wins,
+			Losses:     stat.Losses,
+			TotalVotes: stat.TotalVotes,
+			WinRate:    stat.WinRate,
+		})
+	}
+
+	// Sort by wins descending
+	for i := 0; i < len(leaderboard)-1; i++ {
+		for j := i + 1; j < len(leaderboard); j++ {
+			if leaderboard[j].Wins > leaderboard[i].Wins {
+				leaderboard[i], leaderboard[j] = leaderboard[j], leaderboard[i]
+			}
+		}
+	}
+
+	utils.RespondWithSuccess(c, gin.H{
+		"leaderboard": leaderboard,
+		"timestamp":   time.Now().UTC().Format(time.RFC3339),
+	}, "Leaderboard retrieved successfully", nil)
+}
+
+// GetStatistics handles GET /statistics requests
+func (h *ImageHandler) GetStatistics(c *gin.Context) {
+	if h.valkeyClient == nil {
+		utils.RespondWithError(c, http.StatusServiceUnavailable, "Statistics unavailable", "VALKEY_UNAVAILABLE", nil)
+		return
+	}
+
+	stats, err := h.valkeyClient.GetProviderStats(c.Request.Context())
+	if err != nil {
+		utils.RespondWithError(c, http.StatusInternalServerError, "Failed to get statistics", "STATISTICS_ERROR", map[string]string{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	totalVotes, err := h.valkeyClient.GetTotalVotes(c.Request.Context())
+	if err != nil {
+		utils.RespondWithError(c, http.StatusInternalServerError, "Failed to get total votes", "STATISTICS_ERROR", map[string]string{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	utils.RespondWithSuccess(c, gin.H{
+		"providers":   stats,
+		"total_votes": totalVotes,
+		"timestamp":   time.Now().UTC().Format(time.RFC3339),
+	}, "Statistics retrieved successfully", nil)
 }
 
 // extractProviderFromFilename extracts the provider name from the filename

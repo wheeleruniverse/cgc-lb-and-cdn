@@ -264,7 +264,7 @@ export default function ImageBattle() {
                 animate={keyboardHighlight === 'left' ? { scale: 1.05 } : { scale: 1 }}
               >
                 <img
-                  src={`http://localhost:8080${imagePair.left.url}`}
+                  src={imagePair.left.url}
                   alt="Left choice"
                   className="w-full h-full object-cover"
                   onError={(e) => {
@@ -303,7 +303,7 @@ export default function ImageBattle() {
                 animate={keyboardHighlight === 'right' ? { scale: 1.05 } : { scale: 1 }}
               >
                 <img
-                  src={`http://localhost:8080${imagePair.right.url}`}
+                  src={imagePair.right.url}
                   alt="Right choice"
                   className="w-full h-full object-cover"
                   onError={(e) => {

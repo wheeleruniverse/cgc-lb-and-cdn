@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -125,14 +124,14 @@ func (bp *BaseProvider) SaveToSpaces(imageData []byte, filename, imageID string)
 	// Get DO Spaces configuration
 	bucketName := os.Getenv("DO_SPACES_BUCKET")
 	endpoint := os.Getenv("DO_SPACES_ENDPOINT")
-	accessKey := os.Getenv("DO_SPACES_KEY")
-	secretKey := os.Getenv("DO_SPACES_SECRET")
+	accessKey := os.Getenv("DO_SPACES_ACCESS_KEY")
+	secretKey := os.Getenv("DO_SPACES_SECRET_KEY")
 
 	if bucketName == "" || endpoint == "" || accessKey == "" || secretKey == "" {
-		return nil, fmt.Errorf("missing DO Spaces configuration")
+		return nil, fmt.Errorf("missing DO Spaces configuration (DO_SPACES_BUCKET, DO_SPACES_ENDPOINT, DO_SPACES_ACCESS_KEY, DO_SPACES_SECRET_KEY)")
 	}
 
-	// Construct URL
+	// Construct URL for upload
 	url := fmt.Sprintf("https://%s.%s/%s", bucketName, endpoint, filename)
 
 	// Create HTTP request
@@ -169,53 +168,29 @@ func (bp *BaseProvider) SaveToSpaces(imageData []byte, filename, imageID string)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to upload to DO Spaces: HTTP %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to upload to DO Spaces: HTTP %d - %s", resp.StatusCode, string(body))
 	}
+
+	// Return CDN URL instead of direct Spaces URL
+	cdnURL := fmt.Sprintf("https://%s.%s/%s", bucketName, endpoint, filename)
 
 	return &models.GeneratedImage{
 		ID:       imageID,
 		Filename: filename,
-		Path:     url,
+		Path:     cdnURL,
 		Size:     int64(len(imageData)),
 	}, nil
 }
 
-// SaveToLocal saves image data to local disk
-func (bp *BaseProvider) SaveToLocal(imageData []byte, filename, imageID string) (*models.GeneratedImage, error) {
-	// Ensure images directory exists
-	if err := os.MkdirAll(bp.imageDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create images directory: %w", err)
-	}
-
-	fullPath := filepath.Join(bp.imageDir, filename)
-
-	// Write to file
-	if err := os.WriteFile(fullPath, imageData, 0644); err != nil {
-		return nil, fmt.Errorf("failed to write image file: %w", err)
-	}
-
-	return &models.GeneratedImage{
-		ID:       imageID,
-		Filename: filename,
-		Path:     fullPath,
-		Size:     int64(len(imageData)),
-	}, nil
-}
-
-// SaveImage saves image data to either DO Spaces or local disk based on USE_DO_SPACES environment variable
+// SaveImage saves image data to DigitalOcean Spaces CDN (production only)
 func (bp *BaseProvider) SaveImage(imageData []byte, filePrefix string) (*models.GeneratedImage, error) {
 	// Generate unique identifiers
 	imageID := uuid.New().String()
 	filename := fmt.Sprintf("%s-%s.png", filePrefix, imageID)
 
-	// Check if we should use DO Spaces or local storage
-	useSpaces := os.Getenv("USE_DO_SPACES") == "true"
-
-	if useSpaces {
-		return bp.SaveToSpaces(imageData, filename, imageID)
-	} else {
-		return bp.SaveToLocal(imageData, filename, imageID)
-	}
+	// Always use DO Spaces (no local storage fallback)
+	return bp.SaveToSpaces(imageData, filename, imageID)
 }
 
 // MakeHTTPRequest is a helper for making HTTP requests with error handling

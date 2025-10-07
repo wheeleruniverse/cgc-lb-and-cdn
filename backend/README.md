@@ -7,8 +7,10 @@ A Go-based image generation service using Google Agent Development Kit (ADK) for
 - **Google Agent Development Kit (ADK)**: Intelligent orchestrator agent for provider selection
 - **Automatic Fallback**: Switches between providers when quotas or rate limits are hit
 - **Random Load Balancing**: Treats all providers equally until errors occur
-- **Local Image Storage**: Saves generated images locally (ready for DigitalOcean Spaces integration)
-- **RESTful API**: Clean `/generate` endpoint with JSON responses
+- **DigitalOcean Spaces CDN**: All images served from CDN (no local storage)
+- **Valkey Vote Persistence**: Redis-compatible caching for user votes and leaderboards
+- **Real-time Leaderboard**: Track provider performance with win rates and statistics
+- **RESTful API**: Clean endpoints with JSON responses
 - **Health Monitoring**: Provider status tracking and health endpoints
 
 ## Architecture
@@ -53,7 +55,7 @@ The server will start on `http://localhost:8080` by default.
 
 ### Generate Images
 ```bash
-POST /generate
+POST /api/v1/generate
 ```
 
 **Request:**
@@ -72,25 +74,123 @@ POST /generate
       {
         "id": "uuid",
         "filename": "freepik-uuid.png",
-        "path": "images/freepik-uuid.png",
+        "path": "https://cgc-lb-and-cdn-content.nyc3.digitaloceanspaces.com/freepik-uuid.png",
+        "url": "https://cgc-lb-and-cdn-content.nyc3.digitaloceanspaces.com/freepik-uuid.png",
         "size": 1234567
       }
     ],
     "provider": "freepik",
     "success": true,
     "request_id": "uuid",
-    "duration": "2.5s",
-    "metadata": {
-      "model": "classic-fast",
-      "aspect_ratio": "1:1"
+    "duration": "2.5s"
+  }
+}
+```
+
+### Get Random Image Pair
+```bash
+GET /api/v1/images/pair
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "pair_id": "uuid",
+    "left": {
+      "id": "freepik-uuid",
+      "filename": "freepik-uuid.png",
+      "url": "https://cdn-url/freepik-uuid.png",
+      "provider": "freepik"
+    },
+    "right": {
+      "id": "leonardo-ai-uuid",
+      "filename": "leonardo-ai-uuid.png",
+      "url": "https://cdn-url/leonardo-ai-uuid.png",
+      "provider": "leonardo-ai"
     }
+  }
+}
+```
+
+### Submit Vote
+```bash
+POST /api/v1/images/rate
+```
+
+**Request:**
+```json
+{
+  "pair_id": "uuid",
+  "winner": "left",
+  "left_id": "freepik-uuid",
+  "right_id": "leonardo-ai-uuid"
+}
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "success": true,
+    "pair_id": "uuid",
+    "winner": "left",
+    "message": "Rating submitted successfully",
+    "timestamp": "2025-10-06T12:00:00Z"
+  }
+}
+```
+
+### Get Leaderboard
+```bash
+GET /api/v1/leaderboard
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "leaderboard": [
+      {
+        "provider": "freepik",
+        "wins": 150,
+        "losses": 50,
+        "total_votes": 200,
+        "win_rate": 75.0
+      }
+    ],
+    "timestamp": "2025-10-06T12:00:00Z"
+  }
+}
+```
+
+### Get Statistics
+```bash
+GET /api/v1/statistics
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "providers": {
+      "freepik": {
+        "provider": "freepik",
+        "wins": 150,
+        "losses": 50,
+        "total_votes": 200,
+        "win_rate": 75.0
+      }
+    },
+    "total_votes": 500,
+    "timestamp": "2025-10-06T12:00:00Z"
   }
 }
 ```
 
 ### Provider Status
 ```bash
-GET /status
+GET /api/v1/status
 ```
 
 **Response:**
@@ -100,7 +200,7 @@ GET /status
     "freepik": {
       "name": "freepik",
       "available": true,
-      "last_success": "2025-09-16T15:30:00Z",
+      "last_success": "2025-10-06T12:00:00Z",
       "error_count": 0,
       "quota_hit": false,
       "rate_limited": false
@@ -120,7 +220,7 @@ GET /health
   "status": "healthy",
   "available_providers": 3,
   "total_providers": 3,
-  "timestamp": "2025-09-16T15:30:00Z"
+  "timestamp": "2025-10-06T12:00:00Z"
 }
 ```
 
@@ -128,10 +228,26 @@ GET /health
 
 Environment variables:
 
+**Server:**
 - `PORT`: Server port (default: 8080)
 - `HOST`: Server host (default: 0.0.0.0)
-- `IMAGES_DIR`: Directory for saved images (default: images)
 - `GIN_MODE`: Gin mode (release, debug, test)
+
+**API Keys:**
+- `GOOGLE_API_KEY`: Google Imagen API key
+- `LEONARDO_API_KEY`: Leonardo AI API key
+- `FREEPIK_API_KEY`: Freepik API key
+
+**DigitalOcean Spaces (required):**
+- `DO_SPACES_BUCKET`: Spaces bucket name (e.g., cgc-lb-and-cdn-content)
+- `DO_SPACES_ENDPOINT`: Spaces endpoint (e.g., nyc3.digitaloceanspaces.com)
+- `DO_SPACES_ACCESS_KEY`: Spaces access key
+- `DO_SPACES_SECRET_KEY`: Spaces secret key
+
+**Valkey Database (required for leaderboard):**
+- `DO_VALKEY_HOST`: Valkey cluster host
+- `DO_VALKEY_PORT`: Valkey port (default: 25061)
+- `DO_VALKEY_PASSWORD`: Valkey password
 
 ## Error Handling
 
@@ -156,13 +272,21 @@ type ImageProvider interface {
 }
 ```
 
+## Recent Updates
+
+- ✅ DigitalOcean Spaces CDN integration (all images served from CDN)
+- ✅ Valkey vote persistence and caching
+- ✅ Real-time leaderboard with provider statistics
+- ✅ Vote tracking and analytics
+- ✅ Removed local storage (production-only deployment)
+
 ## Future Enhancements
 
-- [ ] DigitalOcean Spaces integration for cloud storage
 - [ ] Advanced ADK features (conversation memory, tool integration)
 - [ ] Webhook notifications for generation completion
 - [ ] Image metadata extraction and tagging
 - [ ] Performance monitoring and analytics
+- [ ] WebSocket support for real-time leaderboard updates
 
 ## Development
 

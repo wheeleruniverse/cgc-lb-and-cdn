@@ -8,6 +8,7 @@ import (
 	"cgc-image-service/internal/config"
 	"cgc-image-service/internal/handlers"
 	"cgc-image-service/internal/providers"
+	"cgc-image-service/internal/storage"
 
 	"github.com/gin-gonic/gin"
 )
@@ -24,8 +25,17 @@ func main() {
 		log.Fatalf("Failed to initialize providers: %v", err)
 	}
 
+	// Initialize Valkey client
+	valkeyClient, err := storage.NewValkeyClient()
+	if err != nil {
+		log.Printf("Warning: Failed to initialize Valkey client: %v", err)
+		log.Printf("Continuing without vote persistence - leaderboard will be unavailable")
+	} else {
+		log.Printf("✓ Connected to Valkey database")
+	}
+
 	// Create handlers
-	imageHandler := handlers.NewImageHandler(orchestrator)
+	imageHandler := handlers.NewImageHandler(orchestrator, valkeyClient)
 
 	// Setup Gin router
 	router := setupRouter(imageHandler)
@@ -39,7 +49,8 @@ func main() {
 	log.Printf("  GET  /api/v1/status - Get provider status")
 	log.Printf("  GET  /api/v1/images/pair - Get random image pair")
 	log.Printf("  POST /api/v1/images/rate - Submit comparison rating")
-	log.Printf("  GET  /images/* - Serve static images")
+	log.Printf("  GET  /api/v1/leaderboard - Get provider leaderboard")
+	log.Printf("  GET  /api/v1/statistics - Get voting statistics")
 
 	if err := router.Run(addr); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
@@ -95,9 +106,6 @@ func setupRouter(imageHandler *handlers.ImageHandler) *gin.Engine {
 	// Health check endpoint
 	router.GET("/health", imageHandler.HealthCheck)
 
-	// Serve static images (must come before API routes to avoid conflicts)
-	router.Static("/images", "./images")
-
 	// API routes
 	api := router.Group("/api/v1")
 	{
@@ -105,6 +113,8 @@ func setupRouter(imageHandler *handlers.ImageHandler) *gin.Engine {
 		api.GET("/status", imageHandler.GetProviderStatus)
 		api.GET("/images/pair", imageHandler.GetImagePair)
 		api.POST("/images/rate", imageHandler.SubmitRating)
+		api.GET("/leaderboard", imageHandler.GetLeaderboard)
+		api.GET("/statistics", imageHandler.GetStatistics)
 	}
 
 	return router
