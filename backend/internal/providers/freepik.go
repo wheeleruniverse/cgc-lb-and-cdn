@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"cgc-image-service/internal/models"
+	"cgc-lb-and-cdn-backend/internal/models"
 )
 
 // FreepikProvider implements image generation using Freepik's API

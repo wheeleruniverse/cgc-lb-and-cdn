@@ -1,7 +1,7 @@
 package agents
 
 import (
-	"cgc-image-service/internal/models"
+	"cgc-lb-and-cdn-backend/internal/models"
 	"context"
 )
 

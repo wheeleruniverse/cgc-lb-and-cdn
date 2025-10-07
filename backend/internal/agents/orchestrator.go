@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"cgc-image-service/internal/models"
+	"cgc-lb-and-cdn-backend/internal/models"
 )
 
 // ImageOrchestrator implements the OrchestratorAgent interface

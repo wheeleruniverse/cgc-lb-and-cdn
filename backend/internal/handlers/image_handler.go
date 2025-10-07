@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"cgc-image-service/internal/agents"
-	"cgc-image-service/internal/models"
-	"cgc-image-service/internal/storage"
-	"cgc-image-service/pkg/utils"
+	"cgc-lb-and-cdn-backend/internal/agents"
+	"cgc-lb-and-cdn-backend/internal/models"
+	"cgc-lb-and-cdn-backend/internal/storage"
+	"cgc-lb-and-cdn-backend/pkg/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"

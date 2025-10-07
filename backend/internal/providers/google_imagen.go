@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"cgc-image-service/internal/models"
+	"cgc-lb-and-cdn-backend/internal/models"
 
 	"google.golang.org/genai"
 )

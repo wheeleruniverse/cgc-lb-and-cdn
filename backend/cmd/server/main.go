@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"log"
 
-	"cgc-image-service/internal/agents"
-	"cgc-image-service/internal/config"
-	"cgc-image-service/internal/handlers"
-	"cgc-image-service/internal/providers"
-	"cgc-image-service/internal/storage"
+	"cgc-lb-and-cdn-backend/internal/agents"
+	"cgc-lb-and-cdn-backend/internal/config"
+	"cgc-lb-and-cdn-backend/internal/handlers"
+	"cgc-lb-and-cdn-backend/internal/providers"
+	"cgc-lb-and-cdn-backend/internal/storage"
 
 	"github.com/gin-gonic/gin"
 )

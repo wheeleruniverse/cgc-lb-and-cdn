@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	"cgc-image-service/internal/models"
+	"cgc-lb-and-cdn-backend/internal/models"
 )
 
 // LeonardoAIProvider implements image generation using Leonardo AI's API
