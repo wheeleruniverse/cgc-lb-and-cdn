@@ -88,7 +88,8 @@ func main() {
 			Region:  pulumi.String("nyc3"),
 			VpcUuid: vpc.ID(),
 			UserData: pulumi.All(valkeyCluster.Host, valkeyCluster.Port, valkeyCluster.Password, spaceBucket.Name, spaceBucket.Region).ApplyT(func(args []interface{}) string {
-				return getFullStackUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, args[3].(string), spaceBucketEndpoint, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string), spacesAccessKey, spacesSecretKey)
+				bucketName := args[3].(string)
+				return getFullStackUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, bucketName, bucketName, spaceBucketEndpoint, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string), spacesAccessKey, spacesSecretKey)
 			}).(pulumi.StringOutput),
 			// Tags removed due to permission issues
 		})
@@ -104,7 +105,8 @@ func main() {
 			Region:  pulumi.String("nyc3"),
 			VpcUuid: vpc.ID(),
 			UserData: pulumi.All(valkeyCluster.Host, valkeyCluster.Port, valkeyCluster.Password, spaceBucket.Name, spaceBucket.Region).ApplyT(func(args []interface{}) string {
-				return getFullStackUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, args[3].(string), spaceBucketEndpoint, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string), spacesAccessKey, spacesSecretKey)
+				bucketName := args[3].(string)
+				return getFullStackUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, bucketName, bucketName, spaceBucketEndpoint, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string), spacesAccessKey, spacesSecretKey)
 			}).(pulumi.StringOutput),
 			// Tags removed due to permission issues
 		})
@@ -327,7 +329,7 @@ func main() {
 }
 
 // getFullStackUserData returns cloud-init script to deploy both backend and frontend on each droplet
-func getFullStackUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, spacesBucket, spacesEndpoint, valkeyHost, valkeyPort, valkeyPassword, spacesAccessKey, spacesSecretKey string) string {
+func getFullStackUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, leftBucket, rightBucket, spacesEndpoint, valkeyHost, valkeyPort, valkeyPassword, spacesAccessKey, spacesSecretKey string) string {
 	return fmt.Sprintf(`#!/bin/bash
 set -e
 
@@ -406,7 +408,8 @@ GOOGLE_API_KEY=%s
 LEONARDO_API_KEY=%s
 FREEPIK_API_KEY=%s
 USE_DO_SPACES=%s
-DO_SPACES_BUCKET=%s
+DO_SPACES_LEFT_BUCKET=%s
+DO_SPACES_RIGHT_BUCKET=%s
 DO_SPACES_ENDPOINT=%s
 DO_SPACES_ACCESS_KEY=%s
 DO_SPACES_SECRET_KEY=%s
@@ -698,11 +701,11 @@ echo "================================"
 		spacesAccessKey, spacesSecretKey, spacesAccessKey, spacesSecretKey,
 		// s3cmd configuration (2 placeholders)
 		spacesEndpoint, spacesEndpoint,
-		// Backend .env file (13 placeholders)
-		googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, spacesBucket, spacesEndpoint,
+		// Backend .env file (14 placeholders - added left/right buckets)
+		googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, leftBucket, rightBucket, spacesEndpoint,
 		spacesAccessKey, spacesSecretKey,
 		valkeyHost, valkeyPort, valkeyPassword,
 		// Log upload script s3cmd paths (2 placeholders)
-		spacesBucket, spacesBucket,
+		leftBucket, leftBucket,
 	)
 }
