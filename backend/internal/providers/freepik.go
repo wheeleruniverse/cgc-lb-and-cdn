@@ -67,18 +67,12 @@ func (fp *FreepikProvider) Generate(ctx context.Context, req *models.ImageReques
 		return nil, fmt.Errorf("freepik provider is not available: %s", fp.status.LastError)
 	}
 
-	fmt.Printf("[FREEPIK] Starting generation with prompt: %s, count: %d\n", req.Prompt, req.Count)
-
-	// Default to 4 images if not specified
-	count := req.Count
-	if count <= 0 {
-		count = 4
-	}
+	fmt.Printf("[FREEPIK] Starting generation with prompt: %s, count: %d\n", req.Prompt, ImageCount)
 
 	// Prepare request
 	freepikReq := FreepikRequest{
 		Prompt:      req.Prompt,
-		NumImages:   count,
+		NumImages:   ImageCount,
 		AspectRatio: "square_1_1", // Square aspect ratio by default (correct format)
 	}
 
@@ -112,8 +106,8 @@ func (fp *FreepikProvider) Generate(ctx context.Context, req *models.ImageReques
 	// Process images
 	var images []models.GeneratedImage
 	for i, img := range freepikResp.Data {
-		if i >= count {
-			break // Limit to requested count
+		if i >= ImageCount {
+			break // Limit to ImageCount
 		}
 
 		// Debug: Check if we have base64 data
@@ -121,7 +115,7 @@ func (fp *FreepikProvider) Generate(ctx context.Context, req *models.ImageReques
 			return nil, fmt.Errorf("image %d has empty base64 data", i+1)
 		}
 
-		generatedImg, err := fp.saveImageFromBase64(img.Base64, "freepik", req.Bucket)
+		generatedImg, err := fp.saveImageFromBase64(img.Base64, "freepik", i)
 		if err != nil {
 			return nil, fmt.Errorf("failed to save image %d: %w", i+1, err)
 		}
@@ -149,7 +143,7 @@ func (fp *FreepikProvider) Generate(ctx context.Context, req *models.ImageReques
 }
 
 // saveImageFromBase64 saves a base64 encoded image using shared BaseProvider method
-func (fp *FreepikProvider) saveImageFromBase64(base64Data, filePrefix, bucketName string) (*models.GeneratedImage, error) {
+func (fp *FreepikProvider) saveImageFromBase64(base64Data, filePrefix string, index int) (*models.GeneratedImage, error) {
 	// Handle empty base64 data
 	if base64Data == "" {
 		return nil, fmt.Errorf("empty base64 data received")
@@ -175,5 +169,5 @@ func (fp *FreepikProvider) saveImageFromBase64(base64Data, filePrefix, bucketNam
 	}
 
 	// Use shared BaseProvider method
-	return fp.BaseProvider.SaveImage(imageData, filePrefix, bucketName)
+	return fp.BaseProvider.SaveImage(imageData, filePrefix, index)
 }

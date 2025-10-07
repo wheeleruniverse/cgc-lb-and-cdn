@@ -64,17 +64,11 @@ func (gp *GoogleImagenProvider) Generate(ctx context.Context, req *models.ImageR
 		return nil, fmt.Errorf("genai client not initialized")
 	}
 
-	fmt.Printf("[GOOGLE-IMAGEN] Starting generation with prompt: %s, count: %d\n", req.Prompt, req.Count)
-
-	// Default to 4 images if not specified
-	count := req.Count
-	if count <= 0 {
-		count = 4
-	}
+	fmt.Printf("[GOOGLE-IMAGEN] Starting generation with prompt: %s, count: %d\n", req.Prompt, ImageCount)
 
 	// Create generation config
 	config := &genai.GenerateImagesConfig{
-		NumberOfImages: int32(count),
+		NumberOfImages: int32(ImageCount),
 	}
 
 	// Generate images
@@ -88,14 +82,17 @@ func (gp *GoogleImagenProvider) Generate(ctx context.Context, req *models.ImageR
 		return nil, fmt.Errorf("failed to generate images: %w", err)
 	}
 
-	fmt.Printf("[GOOGLE-IMAGEN] API returned %d images (requested %d)\n", len(generateImagesResponse.GeneratedImages), count)
+	fmt.Printf("[GOOGLE-IMAGEN] API returned %d images (requested %d)\n", len(generateImagesResponse.GeneratedImages), ImageCount)
 
 	// Process images
 	var images []models.GeneratedImage
 	for i, image := range generateImagesResponse.GeneratedImages {
+		if i >= ImageCount {
+			break // Limit to ImageCount
+		}
 		fmt.Printf("[GOOGLE-IMAGEN] Processing image %d, size: %d bytes\n", i+1, len(image.Image.ImageBytes))
 		// Save image bytes directly
-		generatedImg, err := gp.saveImageFromBytes(image.Image.ImageBytes, "google-imagen", req.Bucket)
+		generatedImg, err := gp.saveImageFromBytes(image.Image.ImageBytes, "google-imagen", i)
 		if err != nil {
 			return nil, fmt.Errorf("failed to save image %d: %w", i+1, err)
 		}
@@ -124,7 +121,7 @@ func (gp *GoogleImagenProvider) Generate(ctx context.Context, req *models.ImageR
 }
 
 // saveImageFromBytes saves image bytes directly using shared BaseProvider method
-func (gp *GoogleImagenProvider) saveImageFromBytes(imageBytes []byte, filePrefix, bucketName string) (*models.GeneratedImage, error) {
+func (gp *GoogleImagenProvider) saveImageFromBytes(imageBytes []byte, filePrefix string, index int) (*models.GeneratedImage, error) {
 	// Check if we got any data
 	if len(imageBytes) == 0 {
 		return nil, fmt.Errorf("image bytes are empty")
@@ -133,5 +130,5 @@ func (gp *GoogleImagenProvider) saveImageFromBytes(imageBytes []byte, filePrefix
 	fmt.Printf("[GOOGLE-IMAGEN] Saving image (size: %d bytes)\n", len(imageBytes))
 
 	// Use shared BaseProvider method
-	return gp.BaseProvider.SaveImage(imageBytes, filePrefix, bucketName)
+	return gp.BaseProvider.SaveImage(imageBytes, filePrefix, index)
 }

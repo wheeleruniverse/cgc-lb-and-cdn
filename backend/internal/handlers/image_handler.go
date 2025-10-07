@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -145,34 +144,13 @@ var prompts = []string{
 type ImageHandler struct {
 	orchestrator agents.OrchestratorAgent
 	valkeyClient *storage.ValkeyClient
-	cdnEndpoint  string
-	leftBucket   string
-	rightBucket  string
 }
 
 // NewImageHandler creates a new image handler
 func NewImageHandler(orchestrator agents.OrchestratorAgent, valkeyClient *storage.ValkeyClient) *ImageHandler {
-	cdnEndpoint := os.Getenv("DO_SPACES_ENDPOINT")
-	if cdnEndpoint == "" {
-		cdnEndpoint = "nyc3.digitaloceanspaces.com"
-	}
-
-	leftBucket := os.Getenv("DO_SPACES_LEFT_BUCKET")
-	if leftBucket == "" {
-		leftBucket = "cgc-battle-left"
-	}
-
-	rightBucket := os.Getenv("DO_SPACES_RIGHT_BUCKET")
-	if rightBucket == "" {
-		rightBucket = "cgc-battle-right"
-	}
-
 	return &ImageHandler{
 		orchestrator: orchestrator,
 		valkeyClient: valkeyClient,
-		cdnEndpoint:  cdnEndpoint,
-		leftBucket:   leftBucket,
-		rightBucket:  rightBucket,
 	}
 }
 
@@ -199,16 +177,11 @@ func (h *ImageHandler) GenerateImage(c *gin.Context) {
 	req.RequestID = requestID
 	req.Timestamp = time.Now()
 
-	// Use random prompt if none provided
-	if req.Prompt == "" {
-		req.Prompt = getRandomPrompt()
-		fmt.Printf("[INFO] Using random prompt: %s\n", req.Prompt)
-	}
+	// Use random prompt
+	req.Prompt = getRandomPrompt()
+	fmt.Printf("[INFO] Using random prompt: %s\n", req.Prompt)
 
-	// Generate 2 images from the same provider in a single call
-	req.Count = 2
-	req.Bucket = h.leftBucket // Use left bucket as default storage
-
+	// Generate image pair (2 images: left and right)
 	result, err := h.orchestrator.Execute(c.Request.Context(), &req)
 	if err != nil {
 		utils.RespondWithError(c, http.StatusInternalServerError, "Image generation failed", "GENERATION_FAILED", map[string]string{
@@ -223,7 +196,7 @@ func (h *ImageHandler) GenerateImage(c *gin.Context) {
 		return
 	}
 
-	// First image is "left", second is "right"
+	// First image is "left" (index 0), second is "right" (index 1)
 	leftImage := response.Images[0]
 	rightImage := response.Images[1]
 	timestamp := time.Now()

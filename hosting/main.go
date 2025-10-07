@@ -93,7 +93,7 @@ func main() {
 				VpcUuid: vpc.ID(),
 				UserData: pulumi.All(valkeyCluster.Host, valkeyCluster.Port, valkeyCluster.Password, spaceBucket.Name, spaceBucket.Region).ApplyT(func(args []interface{}) string {
 					bucketName := args[3].(string)
-					return getFullStackUserData(sha, googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, bucketName, bucketName, spaceBucketEndpoint, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string), spacesAccessKey, spacesSecretKey)
+					return getFullStackUserData(sha, googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, bucketName, spaceBucketEndpoint, spacesAccessKey, spacesSecretKey, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string))
 				}).(pulumi.StringOutput),
 				// Tags removed due to permission issues
 			})
@@ -336,7 +336,7 @@ func convertDropletsToResources(droplets []*digitalocean.Droplet) []pulumi.Resou
 }
 
 // getFullStackUserData returns cloud-init script to deploy both backend and frontend on each droplet
-func getFullStackUserData(sha, googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, leftBucket, rightBucket, spacesEndpoint, valkeyHost, valkeyPort, valkeyPassword, spacesAccessKey, spacesSecretKey string) string {
+func getFullStackUserData(sha, googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, bucketName, spacesEndpoint, spacesAccessKey, spacesSecretKey, valkeyHost, valkeyPort, valkeyPassword string) string {
 	return fmt.Sprintf(`#!/bin/bash
 set -e
 
@@ -346,8 +346,7 @@ GOOGLE_API_KEY="%s"
 LEONARDO_API_KEY="%s"
 FREEPIK_API_KEY="%s"
 USE_DO_SPACES="%s"
-DO_SPACES_LEFT_BUCKET="%s"
-DO_SPACES_RIGHT_BUCKET="%s"
+DO_SPACES_BUCKET="%s""
 DO_SPACES_ENDPOINT="%s"
 DO_SPACES_ACCESS_KEY="%s"
 DO_SPACES_SECRET_KEY="%s"
@@ -422,8 +421,7 @@ GOOGLE_API_KEY=${GOOGLE_API_KEY}
 LEONARDO_API_KEY=${LEONARDO_API_KEY}
 FREEPIK_API_KEY=${FREEPIK_API_KEY}
 USE_DO_SPACES=${USE_DO_SPACES}
-DO_SPACES_LEFT_BUCKET=${DO_SPACES_LEFT_BUCKET}
-DO_SPACES_RIGHT_BUCKET=${DO_SPACES_RIGHT_BUCKET}
+DO_SPACES_BUCKET=${DO_SPACES_BUCKET}
 DO_SPACES_ENDPOINT=${DO_SPACES_ENDPOINT}
 DO_SPACES_ACCESS_KEY=${DO_SPACES_ACCESS_KEY}
 DO_SPACES_SECRET_KEY=${DO_SPACES_SECRET_KEY}
@@ -670,8 +668,8 @@ CONSOLIDATED="/tmp/cgc-lb-and-cdn-logs-${TIMESTAMP}.log"
 
 # Upload to Spaces if s3cmd is configured
 if [ -f /root/.s3cfg ] && [ -n "${DO_SPACES_ACCESS_KEY}" ]; then
-  s3cmd put "$CONSOLIDATED" "s3://${DO_SPACES_LEFT_BUCKET}/logs/${HOSTNAME}/${TIMESTAMP}.log" 2>&1 && \
-    echo "✅ Logs uploaded to Spaces: s3://${DO_SPACES_LEFT_BUCKET}/logs/${HOSTNAME}/${TIMESTAMP}.log" || \
+  s3cmd put "$CONSOLIDATED" "s3://${DO_SPACES_BUCKET}/logs/${HOSTNAME}/${TIMESTAMP}.log" 2>&1 && \
+    echo "✅ Logs uploaded to Spaces: s3://${DO_SPACES_BUCKET}/logs/${HOSTNAME}/${TIMESTAMP}.log" || \
     echo "❌ Failed to upload logs to Spaces"
 
   # Update last upload timestamp
@@ -720,13 +718,12 @@ echo "================================"
 		leonardoAPIKey,
 		freepikAPIKey,
 		useDoSpaces,
-		leftBucket,
-		rightBucket,
+		bucketName,
 		spacesEndpoint,
+		spacesAccessKey,
+		spacesSecretKey,
 		valkeyHost,
 		valkeyPort,
 		valkeyPassword,
-		spacesAccessKey,
-		spacesSecretKey,
 	)
 }

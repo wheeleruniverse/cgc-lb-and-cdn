@@ -19,18 +19,34 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	// ImageCount is the number of images to generate per request
+	ImageCount = 2
+	// LeftPrefix is the prefix for left images
+	LeftPrefix = "left/"
+	// RightPrefix is the prefix for right images
+	RightPrefix = "right/"
+)
+
 // BaseProvider provides common functionality for all image generation providers
 type BaseProvider struct {
 	name       string
 	status     *models.ProviderStatus
 	httpClient *http.Client
 	imageDir   string
+	bucket     string
 }
 
 // NewBaseProvider creates a new base provider
 func NewBaseProvider(name string) *BaseProvider {
+	bucket := os.Getenv("DO_SPACES_BUCKET")
+	if bucket == "" {
+		bucket = "cgc-lb-and-cdn-content" // Default fallback
+	}
+
 	return &BaseProvider{
-		name: name,
+		name:   name,
+		bucket: bucket,
 		status: &models.ProviderStatus{
 			Name:        name,
 			Available:   true,
@@ -120,18 +136,21 @@ func (bp *BaseProvider) RefreshQuota(ctx context.Context) error {
 }
 
 // SaveToSpaces uploads image data to DigitalOcean Spaces using direct HTTP
-func (bp *BaseProvider) SaveToSpaces(imageData []byte, filename, imageID, bucketName string) (*models.GeneratedImage, error) {
+func (bp *BaseProvider) SaveToSpaces(imageData []byte, filename, imageID, prefix string) (*models.GeneratedImage, error) {
 	// Get DO Spaces configuration
 	endpoint := os.Getenv("DO_SPACES_ENDPOINT")
 	accessKey := os.Getenv("DO_SPACES_ACCESS_KEY")
 	secretKey := os.Getenv("DO_SPACES_SECRET_KEY")
 
-	if bucketName == "" || endpoint == "" || accessKey == "" || secretKey == "" {
+	if bp.bucket == "" || endpoint == "" || accessKey == "" || secretKey == "" {
 		return nil, fmt.Errorf("missing DO Spaces configuration (bucket, DO_SPACES_ENDPOINT, DO_SPACES_ACCESS_KEY, DO_SPACES_SECRET_KEY)")
 	}
 
+	// Prepend prefix to filename (e.g., "left/" or "right/")
+	fullPath := prefix + filename
+
 	// Construct URL for upload
-	url := fmt.Sprintf("https://%s.%s/%s", bucketName, endpoint, filename)
+	url := fmt.Sprintf("https://%s.%s/%s", bp.bucket, endpoint, fullPath)
 
 	// Create HTTP request
 	req, err := http.NewRequest("PUT", url, bytes.NewReader(imageData))
@@ -147,8 +166,8 @@ func (bp *BaseProvider) SaveToSpaces(imageData []byte, filename, imageID, bucket
 	date := time.Now().UTC().Format(time.RFC1123)
 	req.Header.Set("Date", date)
 
-	// Create string to sign
-	stringToSign := fmt.Sprintf("PUT\n\nimage/png\n%s\nx-amz-acl:public-read\n/%s/%s", date, bucketName, filename)
+	// Create string to sign (use fullPath for signature)
+	stringToSign := fmt.Sprintf("PUT\n\nimage/png\n%s\nx-amz-acl:public-read\n/%s/%s", date, bp.bucket, fullPath)
 
 	// Create signature
 	h := hmac.New(sha1.New, []byte(secretKey))
@@ -171,8 +190,8 @@ func (bp *BaseProvider) SaveToSpaces(imageData []byte, filename, imageID, bucket
 		return nil, fmt.Errorf("failed to upload to DO Spaces: HTTP %d - %s", resp.StatusCode, string(body))
 	}
 
-	// Return CDN URL instead of direct Spaces URL
-	cdnURL := fmt.Sprintf("https://%s.%s/%s", bucketName, endpoint, filename)
+	// Return CDN URL instead of direct Spaces URL (use fullPath)
+	cdnURL := fmt.Sprintf("https://%s.%s/%s", bp.bucket, endpoint, fullPath)
 
 	return &models.GeneratedImage{
 		ID:       imageID,
@@ -183,13 +202,20 @@ func (bp *BaseProvider) SaveToSpaces(imageData []byte, filename, imageID, bucket
 }
 
 // SaveImage saves image data to DigitalOcean Spaces CDN (production only)
-func (bp *BaseProvider) SaveImage(imageData []byte, filePrefix, bucketName string) (*models.GeneratedImage, error) {
+// index: 0 for left image, 1 for right image
+func (bp *BaseProvider) SaveImage(imageData []byte, filePrefix string, index int) (*models.GeneratedImage, error) {
 	// Generate unique identifiers
 	imageID := uuid.New().String()
 	filename := fmt.Sprintf("%s-%s.png", filePrefix, imageID)
 
+	// Determine prefix based on index
+	prefix := LeftPrefix
+	if index == 1 {
+		prefix = RightPrefix
+	}
+
 	// Always use DO Spaces (no local storage fallback)
-	return bp.SaveToSpaces(imageData, filename, imageID, bucketName)
+	return bp.SaveToSpaces(imageData, filename, imageID, prefix)
 }
 
 // MakeHTTPRequest is a helper for making HTTP requests with error handling

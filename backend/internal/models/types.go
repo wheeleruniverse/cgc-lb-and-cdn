@@ -7,13 +7,11 @@ import (
 // ImageRequest represents a request to generate images
 type ImageRequest struct {
 	Prompt    string            `json:"prompt" binding:"required"`
-	Count     int               `json:"count,omitempty"`
 	Width     int               `json:"width,omitempty"`
 	Height    int               `json:"height,omitempty"`
 	Metadata  map[string]string `json:"metadata,omitempty"`
 	RequestID string            `json:"request_id,omitempty"`
 	Timestamp time.Time         `json:"timestamp,omitempty"`
-	Bucket    string            `json:"bucket,omitempty"` // Target DO Spaces bucket
 }
 
 // ImageResponse represents the response from image generation
