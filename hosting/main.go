@@ -474,6 +474,9 @@ echo "VALKEY_PORT: $DO_VALKEY_PORT"
 echo "[$(date)] Building backend application..."
 export PATH=$PATH:/usr/local/go/bin
 export GOPATH=/opt/go
+export HOME=/root
+export GOCACHE=/opt/go/cache
+mkdir -p "$GOCACHE"
 cd /opt/cgc-lb-and-cdn-backend
 go mod download
 go build -o server ./cmd/server
@@ -720,10 +723,10 @@ echo "================================"
 		leftBucket,
 		rightBucket,
 		spacesEndpoint,
-		spacesAccessKey,
-		spacesSecretKey,
 		valkeyHost,
 		valkeyPort,
 		valkeyPassword,
+		spacesAccessKey,
+		spacesSecretKey,
 	)
 }
