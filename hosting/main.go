@@ -387,10 +387,10 @@ secret_key = ${DO_SPACES_SECRET_KEY}
 use_https = True
 S3CFG
 
-# Install Go 1.21
+# Install Go 1.23
 cd /tmp
-wget https://go.dev/dl/go1.21.0.linux-amd64.tar.gz
-tar -C /usr/local -xzf go1.21.0.linux-amd64.tar.gz
+wget https://go.dev/dl/go1.23.2.linux-amd64.tar.gz
+tar -C /usr/local -xzf go1.23.2.linux-amd64.tar.gz
 echo 'export PATH=$PATH:/usr/local/go/bin' >> /etc/profile
 echo 'export GOPATH=/opt/go' >> /etc/profile
 echo 'export PATH=$PATH:/opt/go/bin' >> /etc/profile
