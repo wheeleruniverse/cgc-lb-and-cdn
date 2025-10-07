@@ -13,10 +13,9 @@ func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
 		// Load configuration
 		cfg := config.New(ctx, "")
-		domain := cfg.Get("domain")
-		if domain == "" {
-			domain = "wheeleraiduel.online" // Default domain
-		}
+		domain := cfg.Require("domain")
+		sha := cfg.Require("sha")
+		dropletCount := cfg.RequireInt("droplet_count")
 
 		// Get API keys from Pulumi config (passed from GitHub Actions)
 		googleAPIKey := cfg.Get("google_api_key")
@@ -80,38 +79,28 @@ func main() {
 			return err
 		}
 
-		// Droplet 1 - runs both backend and frontend applications
-		droplet1, err := digitalocean.NewDroplet(ctx, "cgc-lb-and-cdn-droplet-1", &digitalocean.DropletArgs{
-			Name:    pulumi.String("cgc-lb-and-cdn-droplet-1"),
-			Image:   pulumi.String("ubuntu-22-04-x64"),
-			Size:    pulumi.String("s-1vcpu-1gb"),
-			Region:  pulumi.String("nyc3"),
-			VpcUuid: vpc.ID(),
-			UserData: pulumi.All(valkeyCluster.Host, valkeyCluster.Port, valkeyCluster.Password, spaceBucket.Name, spaceBucket.Region).ApplyT(func(args []interface{}) string {
-				bucketName := args[3].(string)
-				return getFullStackUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, bucketName, bucketName, spaceBucketEndpoint, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string), spacesAccessKey, spacesSecretKey)
-			}).(pulumi.StringOutput),
-			// Tags removed due to permission issues
-		})
-		if err != nil {
-			return err
-		}
-
-		// Droplet 2 - runs both backend and frontend applications
-		droplet2, err := digitalocean.NewDroplet(ctx, "cgc-lb-and-cdn-droplet-2", &digitalocean.DropletArgs{
-			Name:    pulumi.String("cgc-lb-and-cdn-droplet-2"),
-			Image:   pulumi.String("ubuntu-22-04-x64"),
-			Size:    pulumi.String("s-1vcpu-1gb"),
-			Region:  pulumi.String("nyc3"),
-			VpcUuid: vpc.ID(),
-			UserData: pulumi.All(valkeyCluster.Host, valkeyCluster.Port, valkeyCluster.Password, spaceBucket.Name, spaceBucket.Region).ApplyT(func(args []interface{}) string {
-				bucketName := args[3].(string)
-				return getFullStackUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, bucketName, bucketName, spaceBucketEndpoint, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string), spacesAccessKey, spacesSecretKey)
-			}).(pulumi.StringOutput),
-			// Tags removed due to permission issues
-		})
-		if err != nil {
-			return err
+		// Create droplets dynamically based on droplet_count
+		// Each droplet runs both backend and frontend applications
+		droplets := make([]*digitalocean.Droplet, dropletCount)
+		for i := 0; i < dropletCount; i++ {
+			logicalName := fmt.Sprintf("cgc-lb-and-cdn-droplet-%d", i+1)
+			physicalName := fmt.Sprintf("cgc-lb-and-cdn-droplet-%s-%d", sha[:7], i+1)
+			droplet, err := digitalocean.NewDroplet(ctx, logicalName, &digitalocean.DropletArgs{
+				Name:    pulumi.String(physicalName),
+				Image:   pulumi.String("ubuntu-22-04-x64"),
+				Size:    pulumi.String("s-1vcpu-1gb"),
+				Region:  pulumi.String("nyc3"),
+				VpcUuid: vpc.ID(),
+				UserData: pulumi.All(valkeyCluster.Host, valkeyCluster.Port, valkeyCluster.Password, spaceBucket.Name, spaceBucket.Region).ApplyT(func(args []interface{}) string {
+					bucketName := args[3].(string)
+					return getFullStackUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, bucketName, bucketName, spaceBucketEndpoint, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string), spacesAccessKey, spacesSecretKey)
+				}).(pulumi.StringOutput),
+				// Tags removed due to permission issues
+			})
+			if err != nil {
+				return err
+			}
+			droplets[i] = droplet
 		}
 
 		// Note: Domain should already exist in DigitalOcean (manually created or via DNS provider)
@@ -131,6 +120,12 @@ func main() {
 		}
 
 		// Load balancer to distribute traffic between both droplets
+		// Build dynamic droplet ID array for Load Balancer
+		dropletIDInputs := make([]interface{}, len(droplets))
+		for i, droplet := range droplets {
+			dropletIDInputs[i] = droplet.ID()
+		}
+
 		// Wait for droplets to have IPs assigned before adding to LB
 		loadBalancer, err := digitalocean.NewLoadBalancer(ctx, "cgc-lb-and-cdn-lb", &digitalocean.LoadBalancerArgs{
 			Name:    pulumi.String("cgc-lb-and-cdn-lb"),
@@ -138,13 +133,15 @@ func main() {
 			Size:    pulumi.String("lb-small"),
 			VpcUuid: vpc.ID(),
 
-			// Connect to both droplets - wait for IPs to be assigned first
-			DropletIds: pulumi.All(droplet1.ID(), droplet2.ID()).ApplyT(func(args []interface{}) []int {
-				id1Str := string(args[0].(pulumi.ID))
-				id2Str := string(args[1].(pulumi.ID))
-				id1, _ := strconv.Atoi(id1Str)
-				id2, _ := strconv.Atoi(id2Str)
-				return []int{id1, id2}
+			// Connect to all droplets dynamically
+			DropletIds: pulumi.All(dropletIDInputs...).ApplyT(func(args []interface{}) []int {
+				ids := make([]int, len(args))
+				for i, arg := range args {
+					idStr := string(arg.(pulumi.ID))
+					id, _ := strconv.Atoi(idStr)
+					ids[i] = id
+				}
+				return ids
 			}).(pulumi.IntArrayOutput),
 
 			// Forward traffic to backend API on port 8080
@@ -158,11 +155,11 @@ func main() {
 				},
 				// HTTPS traffic to backend
 				&digitalocean.LoadBalancerForwardingRuleArgs{
-					EntryProtocol:  pulumi.String("https"),
-					EntryPort:      pulumi.Int(443),
-					TargetProtocol: pulumi.String("http"),
-					TargetPort:     pulumi.Int(8080),
-					CertificateId:  certificate.ID(),
+					EntryProtocol:   pulumi.String("https"),
+					EntryPort:       pulumi.Int(443),
+					TargetProtocol:  pulumi.String("http"),
+					TargetPort:      pulumi.Int(8080),
+					CertificateName: certificate.Name,
 				},
 			},
 
@@ -184,7 +181,7 @@ func main() {
 				CookieName:       pulumi.String("lb"),
 				CookieTtlSeconds: pulumi.Int(300),
 			},
-		}, pulumi.DependsOn([]pulumi.Resource{droplet1, droplet2}))
+		}, pulumi.DependsOn(convertDropletsToResources(droplets)))
 		if err != nil {
 			return err
 		}
@@ -259,18 +256,17 @@ func main() {
 				},
 			},
 
-			// Associate firewall with both droplets
-			DropletIds: pulumi.IntArray{
-				droplet1.ID().ApplyT(func(id string) (int, error) {
-					// Pulumi's ID is a string, so we need to parse it to an integer.
-					// A Droplet's ID is guaranteed to be a string representation of an integer.
-					return strconv.Atoi(id)
-				}).(pulumi.IntOutput),
-				droplet2.ID().ApplyT(func(id string) (int, error) {
-					return strconv.Atoi(id)
-				}).(pulumi.IntOutput),
-			},
-		}, pulumi.DependsOn([]pulumi.Resource{droplet1, droplet2}))
+			// Associate firewall with all droplets dynamically
+			DropletIds: func() pulumi.IntArray {
+				intArray := make(pulumi.IntArray, len(droplets))
+				for i, droplet := range droplets {
+					intArray[i] = droplet.ID().ApplyT(func(id string) (int, error) {
+						return strconv.Atoi(id)
+					}).(pulumi.IntOutput)
+				}
+				return intArray
+			}(),
+		}, pulumi.DependsOn(convertDropletsToResources(droplets)))
 		if err != nil {
 			return err
 		}
@@ -310,8 +306,12 @@ func main() {
 		ctx.Export("wwwDomainUrl", pulumi.String("https://www."+domain))
 		ctx.Export("certificateId", certificate.ID())
 		ctx.Export("loadBalancerIp", loadBalancer.Ip)
-		ctx.Export("droplet1Ip", droplet1.Ipv4Address)
-		ctx.Export("droplet2Ip", droplet2.Ipv4Address)
+
+		// Export droplet IPs dynamically
+		for i, droplet := range droplets {
+			ctx.Export(fmt.Sprintf("droplet%dIp", i+1), droplet.Ipv4Address)
+		}
+
 		ctx.Export("spacesBucketName", pulumi.String(spaceBucketName))
 		ctx.Export("spacesBucketEndpoint", pulumi.String(spaceBucketEndpoint))
 		ctx.Export("spacesCdnEndpoint", pulumi.String("https://"+spaceBucketName+"."+spaceBucketEndpoint))
@@ -326,6 +326,15 @@ func main() {
 	})
 }
 
+// convertDropletsToResources converts a slice of droplets to a slice of pulumi.Resource
+func convertDropletsToResources(droplets []*digitalocean.Droplet) []pulumi.Resource {
+	resources := make([]pulumi.Resource, len(droplets))
+	for i, droplet := range droplets {
+		resources[i] = droplet
+	}
+	return resources
+}
+
 // getFullStackUserData returns cloud-init script to deploy both backend and frontend on each droplet
 func getFullStackUserData(googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, leftBucket, rightBucket, spacesEndpoint, valkeyHost, valkeyPort, valkeyPassword, spacesAccessKey, spacesSecretKey string) string {
 	return fmt.Sprintf(`#!/bin/bash
@@ -336,7 +345,7 @@ LOGFILE="/var/log/cgc-lb-and-cdn-deployment.log"
 exec > >(tee -a "$LOGFILE") 2>&1
 
 echo "================================"
-echo "CGC LB and CDN Deployment Started: $(date)"
+echo "Cloud Portfolio Challenge LB and CDN Deployment Started: $(date)"
 echo "================================"
 
 # Set log upload interval (in minutes) - default to 5 for testing, can be changed via env
@@ -419,7 +428,7 @@ ENVEOF
 # Create systemd service file for backend
 cat > /etc/systemd/system/cgc-lb-and-cdn-backend.service << 'EOF'
 [Unit]
-Description=CGC Load Balancer and CDN Backend Service
+Description=Cloud Portfolio Challenge Load Balancer and CDN Backend Service
 After=network.target
 
 [Service]
@@ -589,7 +598,7 @@ fi
 CONSOLIDATED="/tmp/cgc-lb-and-cdn-logs-${TIMESTAMP}.log"
 {
   echo "================================"
-  echo "CGC LB and CDN Log Upload"
+  echo "Cloud Portfolio Challenge LB and CDN Log Upload"
   echo "Hostname: $HOSTNAME"
   echo "Timestamp: $(date)"
   echo "Time since last upload: ${TIME_SINCE_UPLOAD} seconds"

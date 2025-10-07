@@ -2,17 +2,6 @@ name: Deploy Infrastructure
 
 on:
   workflow_dispatch:
-    inputs:
-      domain:
-        description: 'Domain name for the deployment'
-        required: false
-        type: string
-        default: 'wheeleraiduel.online'
-      force_replace_droplets:
-        description: 'Force replace droplets (for code-only changes)'
-        required: false
-        type: boolean
-        default: false
 
 env:
   PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
@@ -51,8 +40,8 @@ jobs:
       run: |
         pulumi stack select dev --create
 
-        # Configure domain
-        pulumi config set cgc-lb-and-cdn:domain "${{ github.event.inputs.domain }}"
+        # Configure deployment SHA
+        pulumi config set cgc-lb-and-cdn:sha "${{ github.sha }}"
 
         # Configure API keys as Pulumi secrets
         pulumi config set --secret cgc-lb-and-cdn:google_api_key "${{ secrets.GOOGLE_API_KEY }}"
@@ -66,14 +55,10 @@ jobs:
         # Configure storage settings
         pulumi config set cgc-lb-and-cdn:use_do_spaces "true"
 
-        # Deploy infrastructure (with optional droplet replacement)
-        if [ "${{ inputs.force_replace_droplets }}" == "true" ]; then
-          echo "🔄 Forcing droplet replacement for code updates..."
-          pulumi up --yes --replace 'urn:pulumi:dev::cgc-lb-and-cdn::digitalocean:index/droplet:Droplet::cgc-lb-and-cdn-droplet-1' --replace 'urn:pulumi:dev::cgc-lb-and-cdn::digitalocean:index/droplet:Droplet::cgc-lb-and-cdn-droplet-2'
-        else
-          echo "📦 Deploying infrastructure changes..."
-          pulumi up --yes
-        fi
+        # Deploy infrastructure
+        # Note: Droplets will automatically be replaced when SHA changes (new commit)
+        echo "📦 Deploying infrastructure..."
+        pulumi up --yes
       env:
         PULUMI_STACK: dev
 
@@ -86,14 +71,17 @@ jobs:
         echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
         pulumi stack output loadBalancerIp >> $GITHUB_STEP_SUMMARY
         echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-        echo "### Droplet 1 IP (Full-Stack)" >> $GITHUB_STEP_SUMMARY
-        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-        pulumi stack output droplet1Ip >> $GITHUB_STEP_SUMMARY
-        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-        echo "### Droplet 2 IP (Full-Stack)" >> $GITHUB_STEP_SUMMARY
-        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-        pulumi stack output droplet2Ip >> $GITHUB_STEP_SUMMARY
-        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+        # Export all droplet IPs dynamically
+        for i in {1..10}; do
+          if pulumi stack output "droplet${i}Ip" 2>/dev/null; then
+            echo "### Droplet $i IP (Full-Stack)" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            pulumi stack output "droplet${i}Ip" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi
+        done
+
         echo "### Valkey Database" >> $GITHUB_STEP_SUMMARY
         echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
         echo "Host: $(pulumi stack output valkeyClusterHost)" >> $GITHUB_STEP_SUMMARY

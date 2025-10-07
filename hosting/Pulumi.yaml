@@ -5,4 +5,9 @@ description: Digital Ocean infrastructure for CGC Load Balancing and CDN project
 config:
   cgc-lb-and-cdn:domain:
     description: Domain name for the application
-    value: ""
+    default: "wheeleraiduel.online"
+  cgc-lb-and-cdn:sha:
+    description: Git commit SHA for deployment tracking
+  cgc-lb-and-cdn:droplet_count:
+    description: Number of droplets to create for load balancing
+    default: 2

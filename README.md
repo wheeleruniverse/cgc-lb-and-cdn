@@ -1,4 +1,4 @@
-# CGC Load Balancing and CDN - AI Image Service
+# Cloud Portfolio Challenge Load Balancing and CDN - AI Image Service
 
 A **Cloud Portfolio Challenge** implementation showcasing modern cloud architecture with load balancing, CDN, and intelligent AI image generation using Google's Agent Development Kit (ADK).
 
