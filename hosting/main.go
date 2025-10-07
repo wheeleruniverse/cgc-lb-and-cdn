@@ -348,6 +348,9 @@ echo "================================"
 echo "Cloud Portfolio Challenge LB and CDN Deployment Started: $(date)"
 echo "================================"
 
+# Set non-interactive mode for all apt operations
+export DEBIAN_FRONTEND=noninteractive
+
 # Set log upload interval (in minutes) - default to 5 for testing, can be changed via env
 export LOG_UPLOAD_INTERVAL_MINUTES="${LOG_UPLOAD_INTERVAL_MINUTES:-5}"
 echo "[$(date)] Log upload interval set to: ${LOG_UPLOAD_INTERVAL_MINUTES} minutes"
@@ -367,11 +370,11 @@ ENVCONF
 # Update system
 echo "[$(date)] Updating system packages..."
 apt-get update -y
-apt-get upgrade -y
+apt-get upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold"
 
 # Install required packages
 echo "[$(date)] Installing required packages..."
-apt-get install -y curl wget git build-essential nginx s3cmd
+apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" curl wget git build-essential nginx s3cmd
 
 # Configure s3cmd for DigitalOcean Spaces
 echo "[$(date)] Configuring S3 access for Spaces..."
@@ -394,7 +397,7 @@ echo 'export PATH=$PATH:/opt/go/bin' >> /etc/profile
 
 # Install Node.js 18
 curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-apt-get install -y nodejs
+apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" nodejs
 
 # Install PM2 for process management
 npm install -g pm2
