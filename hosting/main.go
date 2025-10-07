@@ -14,7 +14,14 @@ func main() {
 		// Load configuration
 		cfg := config.New(ctx, "")
 		domain := cfg.Require("domain")
-		sha := cfg.Require("sha")
+
+		// SHA is required for deployments but optional for teardown
+		// During teardown, Pulumi uses the resource names from state, not from new computation
+		sha := cfg.Get("sha")
+		if sha == "" {
+			sha = "teardown" // Fallback for teardown operations where SHA isn't set
+		}
+
 		dropletCount := cfg.RequireInt("droplet_count")
 
 		// Get API keys from Pulumi config (passed from GitHub Actions)
