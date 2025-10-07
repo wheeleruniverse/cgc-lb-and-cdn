@@ -35,7 +35,7 @@ export default function Leaderboard() {
           setTotalVotes(statsData.data.total_votes || 0)
         }
       } catch (err) {
-        setError(err instanceof Error ? err.Message : 'Unknown error')
+        setError(err instanceof Error ? err.message : 'Unknown error')
       } finally {
         setLoading(false)
       }
