@@ -395,9 +395,9 @@ S3CFG
 cd /tmp
 wget https://go.dev/dl/go1.23.2.linux-amd64.tar.gz
 tar -C /usr/local -xzf go1.23.2.linux-amd64.tar.gz
-echo 'export PATH=$$PATH:/usr/local/go/bin' >> /etc/profile
+echo 'export PATH=$PATH:/usr/local/go/bin' >> /etc/profile
 echo 'export GOPATH=/opt/go' >> /etc/profile
-echo 'export PATH=$$PATH:/opt/go/bin' >> /etc/profile
+echo 'export PATH=$PATH:/opt/go/bin' >> /etc/profile
 
 # Install Node.js 18
 curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
@@ -471,11 +471,11 @@ echo "VALKEY_PORT: $DO_VALKEY_PORT"
 
 # Build and start backend
 echo "[$(date)] Building backend application..."
-export PATH=$$PATH:/usr/local/go/bin
+export PATH=$PATH:/usr/local/go/bin
 export GOPATH=/opt/go
 export HOME=/root
 export GOCACHE=/opt/go/cache
-mkdir -p "$$GOCACHE"
+mkdir -p "$GOCACHE"
 cd /opt/cgc-lb-and-cdn-backend
 go mod download
 go build -o server ./cmd/server
@@ -582,7 +582,7 @@ pm2 start ecosystem.config.js
 
 # Configure PM2 to start on boot
 pm2 save
-pm2 startup systemd -u root --hp /root
+env PATH=$PATH:/usr/bin /usr/bin/pm2 startup systemd -u root --hp /root
 
 # Check PM2 status
 echo "[$(date)] Checking PM2 status..."
