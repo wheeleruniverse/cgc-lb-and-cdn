@@ -1,5 +1,5 @@
 {
-  "name": "cgc-image-comparison-frontend",
+  "name": "cgc-lb-and-cdn-frontend",
   "version": "0.1.0",
   "private": true,
   "scripts": {

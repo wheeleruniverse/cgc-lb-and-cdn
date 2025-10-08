@@ -144,30 +144,30 @@ func main() {
 				return ids
 			}).(pulumi.IntArrayOutput),
 
-			// Forward traffic to backend API on port 8080
+			// Forward traffic to Nginx on port 80 (Nginx routes /api/ to backend:8080, everything else to frontend:3000)
 			ForwardingRules: digitalocean.LoadBalancerForwardingRuleArray{
-				// HTTP traffic (will redirect to HTTPS)
+				// HTTP traffic
 				&digitalocean.LoadBalancerForwardingRuleArgs{
 					EntryProtocol:  pulumi.String("http"),
 					EntryPort:      pulumi.Int(80),
 					TargetProtocol: pulumi.String("http"),
-					TargetPort:     pulumi.Int(8080),
+					TargetPort:     pulumi.Int(80),
 				},
-				// HTTPS traffic to backend
+				// HTTPS traffic
 				&digitalocean.LoadBalancerForwardingRuleArgs{
 					EntryProtocol:   pulumi.String("https"),
 					EntryPort:       pulumi.Int(443),
 					TargetProtocol:  pulumi.String("http"),
-					TargetPort:      pulumi.Int(8080),
+					TargetPort:      pulumi.Int(80),
 					CertificateName: certificate.Name,
 				},
 			},
 
 			// Health check configuration
-			// More lenient settings to keep droplets in rotation during temporary issues
+			// Check Nginx on port 80 which will proxy /health to backend:8080
 			Healthcheck: &digitalocean.LoadBalancerHealthcheckArgs{
 				Protocol:               pulumi.String("http"),
-				Port:                   pulumi.Int(8080),
+				Port:                   pulumi.Int(80),
 				Path:                   pulumi.String("/health"),
 				CheckIntervalSeconds:   pulumi.Int(10),
 				ResponseTimeoutSeconds: pulumi.Int(10), // Increased from 5s to 10s
@@ -510,6 +510,15 @@ server {
         alias /opt/cgc-lb-and-cdn-frontend/.next/static/;
         expires 1y;
         access_log off;
+    }
+
+    # Proxy health check to backend
+    location /health {
+        proxy_pass http://localhost:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 
     # Proxy API requests to local backend
