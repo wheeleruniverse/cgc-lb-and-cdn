@@ -395,9 +395,9 @@ S3CFG
 cd /tmp
 wget https://go.dev/dl/go1.23.2.linux-amd64.tar.gz
 tar -C /usr/local -xzf go1.23.2.linux-amd64.tar.gz
-echo 'export PATH=$PATH:/usr/local/go/bin' >> /etc/profile
+echo 'export PATH=$$PATH:/usr/local/go/bin' >> /etc/profile
 echo 'export GOPATH=/opt/go' >> /etc/profile
-echo 'export PATH=$PATH:/opt/go/bin' >> /etc/profile
+echo 'export PATH=$$PATH:/opt/go/bin' >> /etc/profile
 
 # Install Node.js 18
 curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
@@ -471,11 +471,11 @@ echo "VALKEY_PORT: $DO_VALKEY_PORT"
 
 # Build and start backend
 echo "[$(date)] Building backend application..."
-export PATH=$PATH:/usr/local/go/bin
+export PATH=$$PATH:/usr/local/go/bin
 export GOPATH=/opt/go
 export HOME=/root
 export GOCACHE=/opt/go/cache
-mkdir -p "$GOCACHE"
+mkdir -p "$$GOCACHE"
 cd /opt/cgc-lb-and-cdn-backend
 go mod download
 go build -o server ./cmd/server
@@ -579,9 +579,10 @@ npm run build
 
 echo "[$(date)] Starting frontend with PM2..."
 pm2 start ecosystem.config.js
+
+# Configure PM2 to start on boot
 pm2 save
 pm2 startup systemd -u root --hp /root
-env PATH=$PATH:/usr/bin pm2 startup systemd -u root --hp /root | tail -n 1 | bash
 
 # Check PM2 status
 echo "[$(date)] Checking PM2 status..."
@@ -749,7 +750,21 @@ echo "Nginx proxy running on port 80"
 echo "Deployment logs: /var/log/cgc-lb-and-cdn-deployment.log"
 echo "Upload logs: /var/log/cgc-lb-and-cdn-log-upload.log"
 echo "Log upload interval: ${LOG_UPLOAD_INTERVAL_MINUTES} minutes"
+echo ""
+echo "Services configured to auto-start on boot:"
+echo "  ✓ cgc-lb-and-cdn-backend.service (systemd)"
+echo "  ✓ nginx.service (systemd)"
+echo "  ✓ cgc-lb-and-cdn-frontend (PM2)"
+echo ""
+echo "[$(date)] Rebooting to apply kernel updates and verify auto-start..."
 echo "================================"
+
+# Reboot to apply updates and verify services auto-start
+# Services will automatically start on boot:
+# - Backend: systemctl enabled
+# - Nginx: systemctl enabled
+# - Frontend: PM2 startup configured
+shutdown -r +1 "Rebooting to apply system updates and verify service auto-start"
 `,
 		// All variables passed once at the beginning (13 placeholders total)
 		sha,
