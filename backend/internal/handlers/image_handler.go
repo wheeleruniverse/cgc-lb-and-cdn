@@ -318,6 +318,15 @@ func (h *ImageHandler) GetImagePair(c *gin.Context) {
 	// Get random pair from Valkey
 	pair, err := h.valkeyClient.GetRandomImagePair(c.Request.Context())
 	if err != nil {
+		// Check if it's an empty database (no pairs available yet)
+		if strings.Contains(err.Error(), "no pairs available") {
+			utils.RespondWithError(c, http.StatusNotFound, "No image pairs available yet. Images are being generated in the background - please check back in a few moments!", "NO_PAIRS_YET", map[string]string{
+				"suggestion": "Try generating a new pair or wait for automatic generation",
+			})
+			return
+		}
+
+		// Other errors
 		utils.RespondWithError(c, http.StatusInternalServerError, "Failed to get random image pair", "PAIR_UNAVAILABLE", map[string]string{
 			"error": err.Error(),
 		})

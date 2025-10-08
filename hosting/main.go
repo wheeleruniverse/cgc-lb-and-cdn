@@ -492,6 +492,21 @@ systemctl status cgc-lb-and-cdn-backend.service --no-pager || true
 echo "[$(date)] Testing health endpoint..."
 curl -v http://localhost:8080/health || echo "Health check failed!"
 
+# Bootstrap: Generate initial image pairs to prevent empty database
+echo "[$(date)] Bootstrapping image pairs..."
+for i in 1 2; do
+  echo "[$(date)] Generating bootstrap image pair $i/2..."
+  curl -s -X POST http://localhost:8080/api/v1/generate \
+    -H "Content-Type: application/json" \
+    -d "{\"prompt\": \"bootstrap-image-$i\"}" || echo "Bootstrap generation $i failed"
+
+  # Sleep between generations to avoid rate limits
+  if [ $i -lt 2 ]; then
+    sleep 10
+  fi
+done
+echo "[$(date)] Bootstrap complete - initial image pairs generated"
+
 # ===================
 # FRONTEND SETUP
 # ===================

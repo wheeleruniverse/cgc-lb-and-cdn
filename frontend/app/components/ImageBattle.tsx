@@ -42,9 +42,13 @@ export default function ImageBattle() {
       setLoading(true)
       setError(null)
       const response = await fetch('/api/v1/images/pair')
+
       if (!response.ok) {
-        throw new Error('Failed to fetch image pair')
+        // Parse error response from backend
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to fetch image pair')
       }
+
       const data = await response.json()
       setImagePair(data.data)
     } catch (err) {
@@ -151,21 +155,48 @@ export default function ImageBattle() {
   }, [isVoting, imagePair])
 
   if (error) {
+    // Check if it's the "no pairs yet" error (friendlier UI)
+    const isNoPairsYet = error.includes('No image pairs available yet')
+
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="text-center p-8 bg-red-900/30 rounded-lg backdrop-blur-md"
+          className={`text-center p-8 rounded-lg backdrop-blur-md max-w-md mx-4 ${
+            isNoPairsYet ? 'bg-blue-900/40 border-2 border-blue-400/30' : 'bg-red-900/30'
+          }`}
         >
-          <h2 className="text-2xl font-bold text-red-300 mb-4">Oops!</h2>
-          <p className="text-red-200 mb-6">{error}</p>
-          <button
-            onClick={fetchImagePair}
-            className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-          >
-            Try Again
-          </button>
+          {isNoPairsYet ? (
+            <>
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                className="w-16 h-16 mx-auto mb-4"
+              >
+                🎨
+              </motion.div>
+              <h2 className="text-2xl font-bold text-blue-200 mb-4">Getting Ready...</h2>
+              <p className="text-blue-100 mb-6 leading-relaxed">{error}</p>
+              <button
+                onClick={fetchImagePair}
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-semibold"
+              >
+                Check Again
+              </button>
+            </>
+          ) : (
+            <>
+              <h2 className="text-2xl font-bold text-red-300 mb-4">Oops!</h2>
+              <p className="text-red-200 mb-6">{error}</p>
+              <button
+                onClick={fetchImagePair}
+                className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+              >
+                Try Again
+              </button>
+            </>
+          )}
         </motion.div>
       </div>
     )
