@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -60,10 +61,12 @@ func NewValkeyClient() (*ValkeyClient, error) {
 	addr := fmt.Sprintf("%s:%s", host, port)
 
 	client := redis.NewClient(&redis.Options{
-		Addr:      addr,
-		Password:  password,
-		DB:        0,
-		TLSConfig: nil, // Valkey uses TLS by default on DO
+		Addr:     addr,
+		Password: password,
+		DB:       0,
+		TLSConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		},
 	})
 
 	// Test connection

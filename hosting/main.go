@@ -378,7 +378,7 @@ apt-get upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--fo
 
 # Install required packages
 echo "[$(date)] Installing required packages..."
-apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" curl wget git build-essential nginx s3cmd
+apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" curl wget git build-essential nginx s3cmd redis-tools
 
 # Configure s3cmd for DigitalOcean Spaces
 echo "[$(date)] Configuring S3 access for Spaces..."
@@ -726,12 +726,105 @@ UPLOADEOF
 
 chmod +x /usr/local/bin/upload-logs.sh
 
-# Set up cron job to upload logs based on LOG_UPLOAD_INTERVAL_MINUTES
-echo "[$(date)] Setting up cron job with ${LOG_UPLOAD_INTERVAL_MINUTES} minute interval..."
-echo "*/${LOG_UPLOAD_INTERVAL_MINUTES} * * * * LOG_UPLOAD_INTERVAL_MINUTES=${LOG_UPLOAD_INTERVAL_MINUTES} DO_SPACES_ACCESS_KEY=${DO_SPACES_ACCESS_KEY} DO_SPACES_SECRET_KEY=${DO_SPACES_SECRET_KEY} /usr/local/bin/upload-logs.sh >> /var/log/cgc-lb-and-cdn-log-upload.log 2>&1" | crontab -
+# Set up cron jobs
+echo "[$(date)] Setting up cron jobs..."
 
-# Verify cron job was set
-echo "[$(date)] Cron job configured:"
+# Create script to generate image pairs automatically with distributed locking
+cat > /usr/local/bin/generate-images.sh << 'GENEOF'
+#!/bin/bash
+# Automatically generate image pairs to pre-populate the database
+# Uses distributed locking via Valkey to prevent multiple droplets from generating simultaneously
+# This ensures:
+#   1. Only one droplet generates images at a time (prevents API quota exhaustion)
+#   2. No duplicate pairs are created
+#   3. Valkey isn't overwhelmed with concurrent writes
+
+LOGFILE="/var/log/cgc-lb-and-cdn-image-generation.log"
+TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+LOCK_KEY="image-generation-lock"
+LOCK_TTL=300  # Lock expires after 5 minutes (in case process dies)
+HOSTNAME=$(hostname)
+
+# Function to acquire distributed lock using Valkey
+acquire_lock() {
+  # Use redis-cli with Valkey credentials to implement SETNX (SET if Not eXists)
+  # Returns 1 if lock acquired, 0 if already held by another droplet
+  redis-cli -h ${DO_VALKEY_HOST} -p ${DO_VALKEY_PORT} -a ${DO_VALKEY_PASSWORD} --tls \
+    SET "$LOCK_KEY" "$HOSTNAME" NX EX $LOCK_TTL 2>/dev/null | grep -q "OK"
+  return $?
+}
+
+# Function to release distributed lock
+release_lock() {
+  # Only release if we own the lock (check value matches our hostname)
+  LOCK_OWNER=$(redis-cli -h ${DO_VALKEY_HOST} -p ${DO_VALKEY_PORT} -a ${DO_VALKEY_PASSWORD} --tls \
+    GET "$LOCK_KEY" 2>/dev/null)
+
+  if [ "$LOCK_OWNER" = "$HOSTNAME" ]; then
+    redis-cli -h ${DO_VALKEY_HOST} -p ${DO_VALKEY_PORT} -a ${DO_VALKEY_PASSWORD} --tls \
+      DEL "$LOCK_KEY" >/dev/null 2>&1
+  fi
+}
+
+# Add random jitter (0-30 seconds) to prevent simultaneous lock attempts
+JITTER=$((RANDOM % 30))
+echo "[$TIMESTAMP] Waiting ${JITTER}s jitter before attempting lock..." >> "$LOGFILE"
+sleep $JITTER
+
+# Try to acquire the distributed lock
+if acquire_lock; then
+  echo "[$TIMESTAMP] 🔒 Lock acquired by $HOSTNAME, starting image generation..." >> "$LOGFILE"
+
+  # Ensure lock is released on exit (even if script fails)
+  trap release_lock EXIT
+
+  # Call the backend API to generate a new image pair
+  RESPONSE=$(curl -s -w "\n%{http_code}" -X POST http://localhost:8080/api/v1/generate \
+    -H "Content-Type: application/json" \
+    -d '{"prompt": "auto-generated"}' 2>&1)
+
+  HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
+  BODY=$(echo "$RESPONSE" | head -n -1)
+
+  if [ "$HTTP_CODE" = "200" ]; then
+    PAIR_ID=$(echo "$BODY" | grep -o '"pair_id":"[^"]*"' | cut -d'"' -f4)
+    PROVIDER=$(echo "$BODY" | grep -o '"provider":"[^"]*"' | cut -d'"' -f4)
+    echo "[$TIMESTAMP] ✅ Successfully generated image pair: $PAIR_ID (Provider: $PROVIDER)" >> "$LOGFILE"
+  else
+    echo "[$TIMESTAMP] ❌ Failed to generate images (HTTP $HTTP_CODE): $BODY" >> "$LOGFILE"
+  fi
+
+  # Lock will be released by trap on EXIT
+else
+  echo "[$TIMESTAMP] ⏭️  Lock held by another droplet, skipping this run" >> "$LOGFILE"
+fi
+GENEOF
+
+chmod +x /usr/local/bin/generate-images.sh
+
+# Set up crontab with multiple jobs
+cat > /tmp/crontab.txt << 'CRONEOF'
+# Upload logs every N minutes (configurable via environment)
+*/${LOG_UPLOAD_INTERVAL_MINUTES} * * * * LOG_UPLOAD_INTERVAL_MINUTES=${LOG_UPLOAD_INTERVAL_MINUTES} DO_SPACES_ACCESS_KEY=${DO_SPACES_ACCESS_KEY} DO_SPACES_SECRET_KEY=${DO_SPACES_SECRET_KEY} /usr/local/bin/upload-logs.sh >> /var/log/cgc-lb-and-cdn-log-upload.log 2>&1
+
+# Generate image pairs every 15 minutes to keep database populated
+*/15 * * * * /usr/local/bin/generate-images.sh
+
+# Generate extra images during peak hours (9 AM - 9 PM) every 5 minutes
+*/5 9-21 * * * /usr/local/bin/generate-images.sh
+CRONEOF
+
+# Expand environment variables in crontab
+sed -i "s/\${LOG_UPLOAD_INTERVAL_MINUTES}/${LOG_UPLOAD_INTERVAL_MINUTES}/g" /tmp/crontab.txt
+sed -i "s/\${DO_SPACES_ACCESS_KEY}/${DO_SPACES_ACCESS_KEY}/g" /tmp/crontab.txt
+sed -i "s/\${DO_SPACES_SECRET_KEY}/${DO_SPACES_SECRET_KEY}/g" /tmp/crontab.txt
+
+# Install crontab
+crontab /tmp/crontab.txt
+rm /tmp/crontab.txt
+
+# Verify cron jobs were set
+echo "[$(date)] Cron jobs configured:"
 crontab -l
 
 # Upload initial logs
