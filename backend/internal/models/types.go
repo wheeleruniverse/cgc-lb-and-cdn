@@ -6,12 +6,9 @@ import (
 
 // ImageRequest represents a request to generate images
 type ImageRequest struct {
-	Prompt    string            `json:"prompt" binding:"required"`
-	Width     int               `json:"width,omitempty"`
-	Height    int               `json:"height,omitempty"`
-	Metadata  map[string]string `json:"metadata,omitempty"`
-	RequestID string            `json:"request_id,omitempty"`
-	Timestamp time.Time         `json:"timestamp,omitempty"`
+	Prompt    string    `json:"prompt" binding:"required"`
+	RequestID string    `json:"request_id,omitempty"`
+	Timestamp time.Time `json:"timestamp,omitempty"`
 }
 
 // ImageResponse represents the response from image generation
@@ -19,7 +16,6 @@ type ImageResponse struct {
 	Images    []GeneratedImage  `json:"images"`
 	Provider  string            `json:"provider"`
 	Success   bool              `json:"success"`
-	Message   string            `json:"message,omitempty"`
 	RequestID string            `json:"request_id"`
 	Duration  time.Duration     `json:"duration"`
 	Metadata  map[string]string `json:"metadata,omitempty"`
