@@ -91,8 +91,8 @@ func (gp *GoogleImagenProvider) Generate(ctx context.Context, req *models.ImageR
 			break // Limit to ImageCount
 		}
 		fmt.Printf("[GOOGLE-IMAGEN] Processing image %d, size: %d bytes\n", i+1, len(image.Image.ImageBytes))
-		// Save image bytes directly
-		generatedImg, err := gp.saveImageFromBytes(image.Image.ImageBytes, "google-imagen", i)
+		// Save image bytes directly with pair-id and prompt
+		generatedImg, err := gp.saveImageFromBytes(image.Image.ImageBytes, "google-imagen", req.PairID, req.Prompt, i)
 		if err != nil {
 			return nil, fmt.Errorf("failed to save image %d: %w", i+1, err)
 		}
@@ -121,7 +121,7 @@ func (gp *GoogleImagenProvider) Generate(ctx context.Context, req *models.ImageR
 }
 
 // saveImageFromBytes saves image bytes directly using shared BaseProvider method
-func (gp *GoogleImagenProvider) saveImageFromBytes(imageBytes []byte, filePrefix string, index int) (*models.GeneratedImage, error) {
+func (gp *GoogleImagenProvider) saveImageFromBytes(imageBytes []byte, provider, pairID, prompt string, index int) (*models.GeneratedImage, error) {
 	// Check if we got any data
 	if len(imageBytes) == 0 {
 		return nil, fmt.Errorf("image bytes are empty")
@@ -129,6 +129,6 @@ func (gp *GoogleImagenProvider) saveImageFromBytes(imageBytes []byte, filePrefix
 
 	fmt.Printf("[GOOGLE-IMAGEN] Saving image (size: %d bytes)\n", len(imageBytes))
 
-	// Use shared BaseProvider method
-	return gp.BaseProvider.SaveImage(imageBytes, filePrefix, index)
+	// Use shared BaseProvider method with new simplified API
+	return gp.BaseProvider.SaveImage(imageBytes, provider, pairID, prompt, index)
 }

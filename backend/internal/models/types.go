@@ -8,6 +8,7 @@ import (
 type ImageRequest struct {
 	Prompt    string    `json:"prompt" binding:"required"`
 	RequestID string    `json:"request_id,omitempty"`
+	PairID    string    `json:"pair_id,omitempty"` // Unique identifier for this image pair
 	Timestamp time.Time `json:"timestamp,omitempty"`
 }
 
@@ -97,12 +98,10 @@ type ImagePairResponse struct {
 }
 
 // ComparisonRatingRequest represents a rating submission for image comparison
+// Simplified: pair-id is sufficient since both images are from the same provider
 type ComparisonRatingRequest struct {
-	PairID  string `json:"pair_id" binding:"required"`
-	Winner  string `json:"winner" binding:"required"` // "left" or "right"
-	LeftID  string `json:"left_id" binding:"required"`
-	RightID string `json:"right_id" binding:"required"`
-	Prompt  string `json:"prompt,omitempty"`
+	PairID string `json:"pair_id" binding:"required"`
+	Winner string `json:"winner" binding:"required"` // "left" or "right"
 }
 
 // ComparisonRatingResponse represents the response to a rating submission

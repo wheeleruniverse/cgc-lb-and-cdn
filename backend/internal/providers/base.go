@@ -20,12 +20,8 @@ import (
 )
 
 const (
-	// ImageCount is the number of images to generate per request
+	// ImageCount is the number of images to generate per request (always 2 for comparison)
 	ImageCount = 2
-	// LeftPrefix is the prefix for left images
-	LeftPrefix = "left/"
-	// RightPrefix is the prefix for right images
-	RightPrefix = "right/"
 )
 
 // BaseProvider provides common functionality for all image generation providers
@@ -136,7 +132,8 @@ func (bp *BaseProvider) RefreshQuota(ctx context.Context) error {
 }
 
 // SaveToSpaces uploads image data to DigitalOcean Spaces using direct HTTP
-func (bp *BaseProvider) SaveToSpaces(imageData []byte, filename, imageID, prefix string) (*models.GeneratedImage, error) {
+// New path structure: images/<provider>/<pair-id>/<side>.png
+func (bp *BaseProvider) SaveToSpaces(imageData []byte, provider, pairID, side, prompt string) (*models.GeneratedImage, error) {
 	// Get DO Spaces configuration
 	endpoint := os.Getenv("DO_SPACES_ENDPOINT")
 	accessKey := os.Getenv("DO_SPACES_ACCESS_KEY")
@@ -146,8 +143,8 @@ func (bp *BaseProvider) SaveToSpaces(imageData []byte, filename, imageID, prefix
 		return nil, fmt.Errorf("missing DO Spaces configuration (bucket, DO_SPACES_ENDPOINT, DO_SPACES_ACCESS_KEY, DO_SPACES_SECRET_KEY)")
 	}
 
-	// Prepend prefix to filename (e.g., "left/" or "right/")
-	fullPath := prefix + filename
+	// New path structure: images/<provider>/<pair-id>/<side>.png
+	fullPath := fmt.Sprintf("images/%s/%s/%s.png", provider, pairID, side)
 
 	// Construct URL for upload
 	url := fmt.Sprintf("https://%s.%s/%s", bp.bucket, endpoint, fullPath)
@@ -162,12 +159,19 @@ func (bp *BaseProvider) SaveToSpaces(imageData []byte, filename, imageID, prefix
 	req.Header.Set("Content-Type", "image/png")
 	req.Header.Set("x-amz-acl", "public-read")
 
+	// Add prompt as metadata (x-amz-meta-* headers)
+	req.Header.Set("x-amz-meta-prompt", prompt)
+	req.Header.Set("x-amz-meta-pair-id", pairID)
+	req.Header.Set("x-amz-meta-provider", provider)
+	req.Header.Set("x-amz-meta-side", side)
+
 	// Create signature for authentication
 	date := time.Now().UTC().Format(time.RFC1123)
 	req.Header.Set("Date", date)
 
-	// Create string to sign (use fullPath for signature)
-	stringToSign := fmt.Sprintf("PUT\n\nimage/png\n%s\nx-amz-acl:public-read\n/%s/%s", date, bp.bucket, fullPath)
+	// Create string to sign (must include x-amz headers in canonical order)
+	stringToSign := fmt.Sprintf("PUT\n\nimage/png\n%s\nx-amz-acl:public-read\nx-amz-meta-pair-id:%s\nx-amz-meta-prompt:%s\nx-amz-meta-provider:%s\nx-amz-meta-side:%s\n/%s/%s",
+		date, pairID, prompt, provider, side, bp.bucket, fullPath)
 
 	// Create signature
 	h := hmac.New(sha1.New, []byte(secretKey))
@@ -194,29 +198,26 @@ func (bp *BaseProvider) SaveToSpaces(imageData []byte, filename, imageID, prefix
 	cdnURL := fmt.Sprintf("https://%s.%s.cdn.digitaloceanspaces.com/%s", bp.bucket, strings.TrimSuffix(endpoint, ".digitaloceanspaces.com"), fullPath)
 
 	return &models.GeneratedImage{
-		ID:       imageID,
-		Filename: filename,
-		Path:     fullPath,
-		URL:      cdnURL,
+		ID:       pairID,                      // Use pair-id as the primary identifier
+		Filename: fmt.Sprintf("%s.png", side), // Just "left.png" or "right.png"
+		Path:     fullPath,                    // Full path in Spaces
+		URL:      cdnURL,                      // CDN URL for frontend
 		Size:     int64(len(imageData)),
 	}, nil
 }
 
 // SaveImage saves image data to DigitalOcean Spaces CDN (production only)
+// New simplified API: uses pair-id as the atomic unit
 // index: 0 for left image, 1 for right image
-func (bp *BaseProvider) SaveImage(imageData []byte, filePrefix string, index int) (*models.GeneratedImage, error) {
-	// Generate unique identifiers
-	imageID := uuid.New().String()
-	filename := fmt.Sprintf("%s-%s.png", filePrefix, imageID)
-
-	// Determine prefix based on index
-	prefix := LeftPrefix
+func (bp *BaseProvider) SaveImage(imageData []byte, provider, pairID, prompt string, index int) (*models.GeneratedImage, error) {
+	// Determine side based on index
+	side := "left"
 	if index == 1 {
-		prefix = RightPrefix
+		side = "right"
 	}
 
 	// Always use DO Spaces (no local storage fallback)
-	return bp.SaveToSpaces(imageData, filename, imageID, prefix)
+	return bp.SaveToSpaces(imageData, provider, pairID, side, prompt)
 }
 
 // MakeHTTPRequest is a helper for making HTTP requests with error handling

@@ -98,8 +98,8 @@ func (lp *LeonardoAIProvider) Generate(ctx context.Context, req *models.ImageReq
 		return nil, fmt.Errorf("failed to start generation: %w", err)
 	}
 
-	// Step 2: Poll for completion
-	images, err := lp.pollForCompletion(ctx, generationID)
+	// Step 2: Poll for completion with pair-id and prompt
+	images, err := lp.pollForCompletion(ctx, generationID, "leonardo-ai", req.PairID, req.Prompt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to wait for completion: %w", err)
 	}
@@ -162,7 +162,7 @@ func (lp *LeonardoAIProvider) startGeneration(prompt string, count int) (string,
 }
 
 // pollForCompletion polls the API until generation is complete
-func (lp *LeonardoAIProvider) pollForCompletion(ctx context.Context, generationID string) ([]models.GeneratedImage, error) {
+func (lp *LeonardoAIProvider) pollForCompletion(ctx context.Context, generationID, provider, pairID, prompt string) ([]models.GeneratedImage, error) {
 	maxAttempts := 24 // 2 minutes with 5-second intervals
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
@@ -198,7 +198,7 @@ func (lp *LeonardoAIProvider) pollForCompletion(ctx context.Context, generationI
 				if i >= ImageCount {
 					break // Limit to ImageCount
 				}
-				generatedImg, err := lp.saveImageFromURL(img.URL, "leonardo-ai", i)
+				generatedImg, err := lp.saveImageFromURL(img.URL, provider, pairID, prompt, i)
 				if err != nil {
 					return nil, fmt.Errorf("failed to save image %d: %w", i+1, err)
 				}
@@ -223,7 +223,7 @@ func (lp *LeonardoAIProvider) pollForCompletion(ctx context.Context, generationI
 }
 
 // saveImageFromURL downloads and saves an image from a URL using shared BaseProvider method
-func (lp *LeonardoAIProvider) saveImageFromURL(imageURL, filePrefix string, index int) (*models.GeneratedImage, error) {
+func (lp *LeonardoAIProvider) saveImageFromURL(imageURL, provider, pairID, prompt string, index int) (*models.GeneratedImage, error) {
 	// Download image
 	resp, err := lp.httpClient.Get(imageURL)
 	if err != nil {
@@ -241,8 +241,8 @@ func (lp *LeonardoAIProvider) saveImageFromURL(imageURL, filePrefix string, inde
 		return nil, fmt.Errorf("failed to read image data: %w", err)
 	}
 
-	// Use shared BaseProvider method
-	return lp.BaseProvider.SaveImage(imageData, filePrefix, index)
+	// Use shared BaseProvider method with new simplified API
+	return lp.BaseProvider.SaveImage(imageData, provider, pairID, prompt, index)
 }
 
 // LeonardoUserResponse represents the response from Leonardo AI /me endpoint

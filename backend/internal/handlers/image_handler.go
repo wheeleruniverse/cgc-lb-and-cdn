@@ -175,11 +175,12 @@ func (h *ImageHandler) GenerateImage(c *gin.Context) {
 	requestID := uuid.New().String()
 	pairID := uuid.New().String()
 	req.RequestID = requestID
+	req.PairID = pairID
 	req.Timestamp = time.Now()
 
 	// Use random prompt
 	req.Prompt = getRandomPrompt()
-	fmt.Printf("[INFO] Using random prompt: %s\n", req.Prompt)
+	fmt.Printf("[INFO] Using random prompt: %s, pair_id: %s\n", req.Prompt, pairID)
 
 	// Generate image pair (2 images: left and right)
 	result, err := h.orchestrator.Execute(c.Request.Context(), &req)
@@ -201,7 +202,7 @@ func (h *ImageHandler) GenerateImage(c *gin.Context) {
 	rightImage := response.Images[1]
 	timestamp := time.Now()
 
-	// Store the pair in Valkey
+	// Store the pair in Valkey (simplified structure with pair-id only)
 	if h.valkeyClient != nil {
 		pair := &storage.ImagePair{
 			PairID:    pairID,
@@ -209,8 +210,6 @@ func (h *ImageHandler) GenerateImage(c *gin.Context) {
 			Provider:  response.Provider,
 			LeftURL:   leftImage.URL,
 			RightURL:  rightImage.URL,
-			LeftID:    leftImage.ID,
-			RightID:   rightImage.ID,
 			Timestamp: timestamp,
 		}
 
@@ -333,30 +332,26 @@ func (h *ImageHandler) GetImagePair(c *gin.Context) {
 		return
 	}
 
-	// Extract provider from image IDs (e.g., "freepik-uuid" -> "freepik")
-	leftProvider := extractProviderFromFilename(pair.LeftID)
-	rightProvider := extractProviderFromFilename(pair.RightID)
-
+	// Simplified structure: both images share the same pair-id and provider
 	response := models.ImagePairResponse{
 		PairID: pair.PairID,
 		Prompt: pair.Prompt,
 		Left: models.ImageInfo{
-			ID:       pair.LeftID,
+			ID:       pair.PairID, // Use pair-id as the identifier
 			URL:      pair.LeftURL,
-			Provider: leftProvider,
+			Provider: pair.Provider,
 		},
 		Right: models.ImageInfo{
-			ID:       pair.RightID,
+			ID:       pair.PairID, // Use pair-id as the identifier
 			URL:      pair.RightURL,
-			Provider: rightProvider,
+			Provider: pair.Provider,
 		},
 	}
 
 	utils.RespondWithSuccess(c, response, "Image pair retrieved successfully", map[string]string{
 		"pair_id":  pair.PairID,
 		"prompt":   pair.Prompt,
-		"left_id":  pair.LeftID,
-		"right_id": pair.RightID,
+		"provider": pair.Provider,
 	})
 }
 
@@ -379,19 +374,31 @@ func (h *ImageHandler) SubmitRating(c *gin.Context) {
 
 	// Store vote in Valkey
 	if h.valkeyClient != nil {
+		// Fetch the image pair to get provider and prompt information
+		pair, err := h.valkeyClient.GetImagePairByID(c.Request.Context(), req.PairID)
+		if err != nil {
+			// Pair not found - still record the vote but without provider/prompt
+			fmt.Printf("[WARN] Could not fetch pair %s for vote metadata: %v\n", req.PairID, err)
+		}
+
 		vote := &storage.Vote{
-			PairID:  req.PairID,
-			Winner:  req.Winner,
-			LeftID:  req.LeftID,
-			RightID: req.RightID,
-			Prompt:  req.Prompt,
+			PairID:   req.PairID,
+			Winner:   req.Winner,
+			Provider: "",
+			Prompt:   "",
+		}
+
+		// Add provider and prompt if we found the pair
+		if pair != nil {
+			vote.Provider = pair.Provider
+			vote.Prompt = pair.Prompt
 		}
 
 		if err := h.valkeyClient.RecordVote(c.Request.Context(), vote); err != nil {
 			fmt.Printf("[ERROR] Failed to record vote in Valkey: %v\n", err)
 			// Continue anyway - don't fail the request if Valkey is down
 		} else {
-			fmt.Printf("[VOTE] Recorded in Valkey - Pair: %s, Winner: %s, Prompt: %s\n", req.PairID, req.Winner, req.Prompt)
+			fmt.Printf("[VOTE] Recorded in Valkey - Pair: %s, Winner: %s, Provider: %s\n", req.PairID, req.Winner, vote.Provider)
 		}
 	}
 
@@ -546,13 +553,4 @@ func (h *ImageHandler) GetWinners(c *gin.Context) {
 		"side":      side,
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	}, fmt.Sprintf("%s winners retrieved successfully", strings.Title(side)), nil)
-}
-
-// extractProviderFromFilename extracts the provider name from the filename
-func extractProviderFromFilename(filename string) string {
-	parts := strings.Split(filename, "-")
-	if len(parts) > 0 {
-		return parts[0]
-	}
-	return "unknown"
 }

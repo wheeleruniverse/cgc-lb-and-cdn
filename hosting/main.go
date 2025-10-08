@@ -499,6 +499,16 @@ systemctl status cgc-lb-and-cdn-backend.service --no-pager || true
 echo "[$(date)] Testing health endpoint..."
 curl -v http://localhost:8080/health || echo "Health check failed!"
 
+# Flush Valkey if requested (clears all cached data)
+if [ "${FLUSH_VALKEY}" = "true" ]; then
+  echo "[$(date)] Flushing Valkey database (clearing all cached data)..."
+  redis-cli -h ${DO_VALKEY_HOST} -p ${DO_VALKEY_PORT} -a ${DO_VALKEY_PASSWORD} --tls FLUSHALL && \
+    echo "[$(date)] ✅ Valkey database flushed successfully" || \
+    echo "[$(date)] ⚠️  Failed to flush Valkey database"
+else
+  echo "[$(date)] Valkey flush not requested, preserving existing data"
+fi
+
 # Bootstrap: Generate initial image pairs to prevent empty database
 echo "[$(date)] Bootstrapping image pairs..."
 for i in 1 2; do

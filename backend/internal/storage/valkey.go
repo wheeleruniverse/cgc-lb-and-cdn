@@ -18,24 +18,25 @@ type ValkeyClient struct {
 }
 
 // Vote represents a user vote
+// Simplified structure: pair-id is the atomic unit, both images share the same provider
 type Vote struct {
 	PairID    string    `json:"pair_id"`
-	Winner    string    `json:"winner"`
-	LeftID    string    `json:"left_id"`
-	RightID   string    `json:"right_id"`
+	Winner    string    `json:"winner"`   // "left" or "right"
+	Provider  string    `json:"provider"` // The provider that generated this pair
 	Prompt    string    `json:"prompt"`
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// ImagePair represents a pair of images generated from the same prompt
+// ImagePair represents a pair of images generated from the same prompt by the same provider
+// New simplified structure: uses pair-id as the primary identifier
+// Images are stored in Spaces at: images/<provider>/<pair-id>/<side>.png
+// Both images are from the same provider for apples-to-apples comparison
 type ImagePair struct {
 	PairID    string    `json:"pair_id"`
 	Prompt    string    `json:"prompt"`
-	Provider  string    `json:"provider"`
-	LeftURL   string    `json:"left_url"`
-	RightURL  string    `json:"right_url"`
-	LeftID    string    `json:"left_id"`
-	RightID   string    `json:"right_id"`
+	Provider  string    `json:"provider"`  // Single provider for both images
+	LeftURL   string    `json:"left_url"`  // CDN URL for left image
+	RightURL  string    `json:"right_url"` // CDN URL for right image
 	Timestamp time.Time `json:"timestamp"`
 }
 
@@ -106,26 +107,16 @@ func (v *ValkeyClient) RecordVote(ctx context.Context, vote *Vote) error {
 		return fmt.Errorf("failed to trim votes list: %w", err)
 	}
 
-	// Increment provider stats (winner)
-	if err := v.client.HIncrBy(ctx, "provider:wins", vote.Winner, 1).Err(); err != nil {
-		return fmt.Errorf("failed to increment wins: %w", err)
-	}
-
-	// Increment total votes for both providers
-	if err := v.client.HIncrBy(ctx, "provider:total", vote.LeftID, 1).Err(); err != nil {
-		return fmt.Errorf("failed to increment total: %w", err)
-	}
-	if err := v.client.HIncrBy(ctx, "provider:total", vote.RightID, 1).Err(); err != nil {
+	// Increment provider stats
+	// Since both images are from the same provider, we just increment that provider's stats
+	if err := v.client.HIncrBy(ctx, "provider:total", vote.Provider, 1).Err(); err != nil {
 		return fmt.Errorf("failed to increment total: %w", err)
 	}
 
-	// Increment losses for loser
-	loser := "left"
-	if vote.Winner == "left" {
-		loser = "right"
-	}
-	if err := v.client.HIncrBy(ctx, "provider:losses", loser, 1).Err(); err != nil {
-		return fmt.Errorf("failed to increment losses: %w", err)
+	// Track wins by side preference (which side users tend to choose)
+	// This is useful for detecting position bias (left vs right preference)
+	if err := v.client.HIncrBy(ctx, "side:wins", vote.Winner, 1).Err(); err != nil {
+		return fmt.Errorf("failed to increment side wins: %w", err)
 	}
 
 	return nil
@@ -248,6 +239,25 @@ func (v *ValkeyClient) StoreImagePair(ctx context.Context, pair *ImagePair) erro
 	}
 
 	return nil
+}
+
+// GetImagePairByID retrieves a specific image pair by its ID
+func (v *ValkeyClient) GetImagePairByID(ctx context.Context, pairID string) (*ImagePair, error) {
+	pairKey := fmt.Sprintf("pair:%s", pairID)
+	pairJSON, err := v.client.Get(ctx, pairKey).Result()
+	if err == redis.Nil {
+		return nil, fmt.Errorf("pair not found: %s", pairID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pair: %w", err)
+	}
+
+	var pair ImagePair
+	if err := json.Unmarshal([]byte(pairJSON), &pair); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal pair: %w", err)
+	}
+
+	return &pair, nil
 }
 
 // GetRandomImagePair retrieves a random image pair from Valkey

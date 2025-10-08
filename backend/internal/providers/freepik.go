@@ -115,7 +115,7 @@ func (fp *FreepikProvider) Generate(ctx context.Context, req *models.ImageReques
 			return nil, fmt.Errorf("image %d has empty base64 data", i+1)
 		}
 
-		generatedImg, err := fp.saveImageFromBase64(img.Base64, "freepik", i)
+		generatedImg, err := fp.saveImageFromBase64(img.Base64, "freepik", req.PairID, req.Prompt, i)
 		if err != nil {
 			return nil, fmt.Errorf("failed to save image %d: %w", i+1, err)
 		}
@@ -143,7 +143,7 @@ func (fp *FreepikProvider) Generate(ctx context.Context, req *models.ImageReques
 }
 
 // saveImageFromBase64 saves a base64 encoded image using shared BaseProvider method
-func (fp *FreepikProvider) saveImageFromBase64(base64Data, filePrefix string, index int) (*models.GeneratedImage, error) {
+func (fp *FreepikProvider) saveImageFromBase64(base64Data, provider, pairID, prompt string, index int) (*models.GeneratedImage, error) {
 	// Handle empty base64 data
 	if base64Data == "" {
 		return nil, fmt.Errorf("empty base64 data received")
@@ -168,6 +168,6 @@ func (fp *FreepikProvider) saveImageFromBase64(base64Data, filePrefix string, in
 		return nil, fmt.Errorf("decoded image data is empty")
 	}
 
-	// Use shared BaseProvider method
-	return fp.BaseProvider.SaveImage(imageData, filePrefix, index)
+	// Use shared BaseProvider method with new simplified API
+	return fp.BaseProvider.SaveImage(imageData, provider, pairID, prompt, index)
 }

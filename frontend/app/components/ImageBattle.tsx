@@ -73,8 +73,6 @@ export default function ImageBattle() {
         body: JSON.stringify({
           pair_id: imagePair.pair_id,
           winner,
-          left_id: imagePair.left.id,
-          right_id: imagePair.right.id,
         }),
       })
 
