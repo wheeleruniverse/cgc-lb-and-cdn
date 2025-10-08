@@ -109,10 +109,10 @@ If you have a custom domain:
 - **SSL**: Ready for SSL certificate (update certificate ID)
 
 ### Droplets
-- **Size**: s-1vcpu-1gb (1 CPU, 1GB RAM)
+- **Size**: s-2vcpu-2gb (2 CPU, 2GB RAM)
 - **Image**: Ubuntu 22.04 LTS
 - **Network**: Private VPC with public IP
-- **Storage**: 25GB SSD
+- **Storage**: 50GB SSD
 
 ### DO Spaces Storage
 - **Name**: cgc-lb-and-cdn-content

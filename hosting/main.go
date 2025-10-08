@@ -88,7 +88,7 @@ func main() {
 			droplet, err := digitalocean.NewDroplet(ctx, logicalName, &digitalocean.DropletArgs{
 				Name:    pulumi.String(physicalName),
 				Image:   pulumi.String("ubuntu-22-04-x64"),
-				Size:    pulumi.String("s-1vcpu-1gb"),
+				Size:    pulumi.String("s-2vcpu-2gb"),
 				Region:  pulumi.String("nyc3"),
 				VpcUuid: vpc.ID(),
 				UserData: pulumi.All(valkeyCluster.Host, valkeyCluster.Port, valkeyCluster.Password, spaceBucket.Name, spaceBucket.Region).ApplyT(func(args []interface{}) string {
@@ -165,14 +165,15 @@ func main() {
 
 			// Health check configuration
 			// Check Nginx on port 80 which will proxy /health to backend:8080
+			// More tolerant settings to allow time for initial deployment
 			Healthcheck: &digitalocean.LoadBalancerHealthcheckArgs{
 				Protocol:               pulumi.String("http"),
 				Port:                   pulumi.Int(80),
 				Path:                   pulumi.String("/health"),
 				CheckIntervalSeconds:   pulumi.Int(10),
-				ResponseTimeoutSeconds: pulumi.Int(10), // Increased from 5s to 10s
-				HealthyThreshold:       pulumi.Int(2),  // Reduced from 3 to 2 (faster recovery)
-				UnhealthyThreshold:     pulumi.Int(5),  // Increased from 3 to 5 (more tolerant)
+				ResponseTimeoutSeconds: pulumi.Int(15), // Increased to 15s for slower responses
+				HealthyThreshold:       pulumi.Int(2),  // Needs 2 successful checks to mark UP
+				UnhealthyThreshold:     pulumi.Int(8),  // Increased to 8 (80 seconds of failures before marking DOWN)
 			},
 
 			// Sticky sessions
