@@ -30,6 +30,12 @@ func main() {
 		spacesAccessKey := cfg.Get("do_spaces_access_key")
 		spacesSecretKey := cfg.Get("do_spaces_secret_key")
 
+		// Get Valkey flush option from Pulumi config (optional)
+		flushValkey := cfg.Get("flush_valkey")
+		if flushValkey == "" {
+			flushValkey = "false" // Default to not flushing
+		}
+
 		// Note: In GitHub Actions, these should be passed as:
 		// --config do_spaces_access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}
 		// --config do_spaces_secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}
@@ -93,7 +99,7 @@ func main() {
 				VpcUuid: vpc.ID(),
 				UserData: pulumi.All(valkeyCluster.Host, valkeyCluster.Port, valkeyCluster.Password, spaceBucket.Name, spaceBucket.Region).ApplyT(func(args []interface{}) string {
 					bucketName := args[3].(string)
-					return getFullStackUserData(sha, googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, bucketName, spaceBucketEndpoint, spacesAccessKey, spacesSecretKey, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string))
+					return getFullStackUserData(sha, googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, bucketName, spaceBucketEndpoint, spacesAccessKey, spacesSecretKey, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string), flushValkey)
 				}).(pulumi.StringOutput),
 				// Tags removed due to permission issues
 			})
@@ -337,7 +343,7 @@ func convertDropletsToResources(droplets []*digitalocean.Droplet) []pulumi.Resou
 }
 
 // getFullStackUserData returns cloud-init script to deploy both backend and frontend on each droplet
-func getFullStackUserData(sha, googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, bucketName, spacesEndpoint, spacesAccessKey, spacesSecretKey, valkeyHost, valkeyPort, valkeyPassword string) string {
+func getFullStackUserData(sha, googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, bucketName, spacesEndpoint, spacesAccessKey, spacesSecretKey, valkeyHost, valkeyPort, valkeyPassword, flushValkey string) string {
 	return fmt.Sprintf(`#!/bin/bash
 set -e
 
@@ -354,6 +360,7 @@ DO_SPACES_SECRET_KEY="%s"
 DO_VALKEY_HOST="%s"
 DO_VALKEY_PORT="%s"
 DO_VALKEY_PASSWORD="%s"
+FLUSH_VALKEY="%s"
 
 # Setup logging
 LOGFILE="/var/log/cgc-lb-and-cdn-deployment.log"
@@ -891,5 +898,6 @@ shutdown -r +1 "Rebooting to apply system updates and verify service auto-start"
 		valkeyHost,
 		valkeyPort,
 		valkeyPassword,
+		flushValkey,
 	)
 }

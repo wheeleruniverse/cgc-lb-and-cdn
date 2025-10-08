@@ -2,6 +2,15 @@ name: Deploy Infrastructure
 
 on:
   workflow_dispatch:
+    inputs:
+      flush_valkey:
+        description: 'Flush Valkey database on deployment (clears all data)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 env:
   PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
@@ -42,6 +51,9 @@ jobs:
 
         # Configure deployment SHA
         pulumi config set cgc-lb-and-cdn:sha "${{ github.sha }}"
+
+        # Configure Valkey flush option
+        pulumi config set cgc-lb-and-cdn:flush_valkey "${{ github.event.inputs.flush_valkey || 'false' }}"
 
         # Configure API keys as Pulumi secrets
         pulumi config set --secret cgc-lb-and-cdn:google_api_key "${{ secrets.GOOGLE_API_KEY }}"

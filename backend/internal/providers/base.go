@@ -191,12 +191,13 @@ func (bp *BaseProvider) SaveToSpaces(imageData []byte, filename, imageID, prefix
 	}
 
 	// Return CDN URL instead of direct Spaces URL (use fullPath)
-	cdnURL := fmt.Sprintf("https://%s.%s/%s", bp.bucket, endpoint, fullPath)
+	cdnURL := fmt.Sprintf("https://%s.%s.cdn.digitaloceanspaces.com/%s", bp.bucket, strings.TrimSuffix(endpoint, ".digitaloceanspaces.com"), fullPath)
 
 	return &models.GeneratedImage{
 		ID:       imageID,
 		Filename: filename,
-		Path:     cdnURL,
+		Path:     fullPath,
+		URL:      cdnURL,
 		Size:     int64(len(imageData)),
 	}, nil
 }
