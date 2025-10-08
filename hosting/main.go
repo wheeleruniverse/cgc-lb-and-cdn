@@ -551,11 +551,10 @@ module.exports = {
   apps: [{
     name: 'cgc-lb-and-cdn-frontend',
     script: 'npm',
-    args: 'start',
+    args: 'start -- -H 0.0.0.0 -p 3000',
     cwd: '/opt/cgc-lb-and-cdn-frontend',
     env: {
-      NODE_ENV: 'production',
-      PORT: 3000
+      NODE_ENV: 'production'
     }
   }]
 }
@@ -586,6 +585,36 @@ env PATH=$PATH:/usr/bin pm2 startup systemd -u root --hp /root | tail -n 1 | bas
 # Check PM2 status
 echo "[$(date)] Checking PM2 status..."
 pm2 list
+
+# Diagnostic checks
+echo "[$(date)] Running diagnostic checks..."
+echo "=== Listening ports ==="
+netstat -tlnp | grep -E ':(80|443|3000|8080)' || echo "No services listening on expected ports!"
+
+echo ""
+echo "=== Backend health check ==="
+sleep 3
+curl -v http://localhost:8080/health || echo "Backend health check failed!"
+
+echo ""
+echo "=== Frontend health check ==="
+curl -v http://localhost:3000 || echo "Frontend health check failed!"
+
+echo ""
+echo "=== Nginx health check ==="
+curl -v http://localhost:80 || echo "Nginx health check failed!"
+
+echo ""
+echo "=== Backend logs (last 20 lines) ==="
+journalctl -u cgc-lb-and-cdn-backend.service -n 20 --no-pager || true
+
+echo ""
+echo "=== Frontend logs (last 20 lines) ==="
+pm2 logs cgc-lb-and-cdn-frontend --lines 20 --nostream || true
+
+echo ""
+echo "=== Nginx error log (last 20 lines) ==="
+tail -n 20 /var/log/nginx/error.log || true
 
 # ===================
 # SETUP LOG UPLOAD
