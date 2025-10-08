@@ -4,20 +4,14 @@ import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useDrag } from '@use-gesture/react'
 import { useSpring, animated } from '@react-spring/web'
-
-interface ImageInfo {
-  id: string
-  filename: string
-  path: string
-  url: string
-  provider: string
-  size: number
-}
+import WinnersGrid from './WinnersGrid'
 
 interface ImagePair {
   pair_id: string
-  left: ImageInfo
-  right: ImageInfo
+  prompt: string
+  provider: string
+  left_url: string
+  right_url: string
 }
 
 export default function ImageBattle() {
@@ -28,6 +22,15 @@ export default function ImageBattle() {
   const [showWinnerEffect, setShowWinnerEffect] = useState<'left' | 'right' | null>(null)
   const [teamScores, setTeamScores] = useState({ left: 0, right: 0 })
   const [keyboardHighlight, setKeyboardHighlight] = useState<'left' | 'right' | null>(null)
+  const [votedPairIds, setVotedPairIds] = useState<string[]>(() => {
+    // Load voted pairs from localStorage on mount
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('votedPairIds')
+      return stored ? JSON.parse(stored) : []
+    }
+    return []
+  })
+  const [showWinnersGrid, setShowWinnersGrid] = useState<'left' | 'right' | null>(null)
 
   // Spring animation for the main container
   const [{ x, rotate, scale }, api] = useSpring(() => ({
@@ -41,7 +44,14 @@ export default function ImageBattle() {
     try {
       setLoading(true)
       setError(null)
-      const response = await fetch('/api/v1/images/pair')
+
+      // Build URL with excluded pair IDs
+      let url = '/api/v1/images/pair'
+      if (votedPairIds.length > 0) {
+        url += `?exclude=${votedPairIds.join(',')}`
+      }
+
+      const response = await fetch(url)
 
       if (!response.ok) {
         // Parse error response from backend
@@ -78,6 +88,13 @@ export default function ImageBattle() {
 
       if (!response.ok) {
         throw new Error('Failed to submit vote')
+      }
+
+      // Add this pair to voted pairs and save to localStorage
+      const newVotedPairIds = [...votedPairIds, imagePair.pair_id]
+      setVotedPairIds(newVotedPairIds)
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('votedPairIds', JSON.stringify(newVotedPairIds))
       }
 
       // Update team scores
@@ -152,9 +169,20 @@ export default function ImageBattle() {
     return () => window.removeEventListener('keydown', handleKeyPress)
   }, [isVoting, imagePair])
 
+  // Show winners grid if requested
+  if (showWinnersGrid) {
+    return (
+      <WinnersGrid
+        side={showWinnersGrid}
+        onClose={() => setShowWinnersGrid(null)}
+      />
+    )
+  }
+
   if (error) {
     // Check if it's the "no pairs yet" error (friendlier UI)
     const isNoPairsYet = error.includes('No image pairs available yet')
+    const isAllVoted = error.includes("You've voted on all available pairs")
 
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
@@ -162,7 +190,9 @@ export default function ImageBattle() {
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           className={`text-center p-8 rounded-lg backdrop-blur-md max-w-md mx-4 ${
-            isNoPairsYet ? 'bg-blue-900/40 border-2 border-blue-400/30' : 'bg-red-900/30'
+            isNoPairsYet ? 'bg-blue-900/40 border-2 border-blue-400/30' :
+            isAllVoted ? 'bg-green-900/40 border-2 border-green-400/30' :
+            'bg-red-900/30'
           }`}
         >
           {isNoPairsYet ? (
@@ -181,6 +211,25 @@ export default function ImageBattle() {
                 className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-semibold"
               >
                 Check Again
+              </button>
+            </>
+          ) : isAllVoted ? (
+            <>
+              <div className="text-6xl mb-4">🎉</div>
+              <h2 className="text-2xl font-bold text-green-200 mb-4">All Done!</h2>
+              <p className="text-green-100 mb-6 leading-relaxed">{error}</p>
+              <button
+                onClick={() => {
+                  // Clear voted pairs and reset
+                  setVotedPairIds([])
+                  if (typeof window !== 'undefined') {
+                    localStorage.removeItem('votedPairIds')
+                  }
+                  fetchImagePair()
+                }}
+                className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-semibold"
+              >
+                Start Over
               </button>
             </>
           ) : (
@@ -243,12 +292,16 @@ export default function ImageBattle() {
         {/* Team Scores with Vertical Divider */}
         <div className="flex items-center justify-center max-w-md mx-auto">
           {/* Team Left */}
-          <div className="flex-1 text-center">
-            <div className="bg-blue-500/20 backdrop-blur-md rounded-lg px-4 py-3 border border-blue-400/30">
+          <button
+            onClick={() => setShowWinnersGrid('left')}
+            className="flex-1 text-center group transition-transform hover:scale-105 active:scale-95"
+          >
+            <div className="bg-blue-500/20 backdrop-blur-md rounded-lg px-4 py-3 border border-blue-400/30 group-hover:border-blue-400/60 group-hover:bg-blue-500/30 transition-all cursor-pointer">
               <div className="text-2xl font-bold text-blue-300">{teamScores.left}</div>
-              <div className="text-xs text-blue-200">Team Left</div>
+              <div className="text-xs text-blue-200 group-hover:text-blue-100">Team Left</div>
+              <div className="text-[10px] text-blue-300/60 group-hover:text-blue-200/80 mt-1">Click to view winners</div>
             </div>
-          </div>
+          </button>
 
           {/* Vertical Divider with VS */}
           <div className="flex flex-col items-center mx-4">
@@ -260,12 +313,16 @@ export default function ImageBattle() {
           </div>
 
           {/* Team Right */}
-          <div className="flex-1 text-center">
-            <div className="bg-purple-500/20 backdrop-blur-md rounded-lg px-4 py-3 border border-purple-400/30">
+          <button
+            onClick={() => setShowWinnersGrid('right')}
+            className="flex-1 text-center group transition-transform hover:scale-105 active:scale-95"
+          >
+            <div className="bg-purple-500/20 backdrop-blur-md rounded-lg px-4 py-3 border border-purple-400/30 group-hover:border-purple-400/60 group-hover:bg-purple-500/30 transition-all cursor-pointer">
               <div className="text-2xl font-bold text-purple-300">{teamScores.right}</div>
-              <div className="text-xs text-purple-200">Team Right</div>
+              <div className="text-xs text-purple-200 group-hover:text-purple-100">Team Right</div>
+              <div className="text-[10px] text-purple-300/60 group-hover:text-purple-200/80 mt-1">Click to view winners</div>
             </div>
-          </div>
+          </button>
         </div>
       </motion.div>
 
@@ -275,6 +332,18 @@ export default function ImageBattle() {
           layout
           className="max-w-4xl mx-auto"
         >
+          {/* Prompt Display */}
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-4 text-center"
+          >
+            <div className="bg-white/10 backdrop-blur-md rounded-lg px-6 py-3 border border-white/20">
+              <p className="text-white/60 text-xs uppercase tracking-wider mb-1">Prompt</p>
+              <p className="text-white text-sm md:text-base font-medium">{imagePair.prompt}</p>
+            </div>
+          </motion.div>
+
           <animated.div
             {...bind()}
             style={{ x, rotate, scale }}
@@ -293,7 +362,7 @@ export default function ImageBattle() {
                 animate={keyboardHighlight === 'left' ? { scale: 1.05 } : { scale: 1 }}
               >
                 <img
-                  src={imagePair.left.url}
+                  src={imagePair.left_url}
                   alt="Left choice"
                   className="w-full h-full object-cover"
                   onError={(e) => {
@@ -303,7 +372,7 @@ export default function ImageBattle() {
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
                 <div className="absolute bottom-4 left-4 text-white">
-                  <div className="text-sm font-medium">{imagePair.left.provider}</div>
+                  <div className="text-sm font-medium">{imagePair.provider}</div>
                   <div className="text-xs opacity-75">Tap or swipe left</div>
                 </div>
 
@@ -332,7 +401,7 @@ export default function ImageBattle() {
                 animate={keyboardHighlight === 'right' ? { scale: 1.05 } : { scale: 1 }}
               >
                 <img
-                  src={imagePair.right.url}
+                  src={imagePair.right_url}
                   alt="Right choice"
                   className="w-full h-full object-cover"
                   onError={(e) => {
@@ -342,7 +411,7 @@ export default function ImageBattle() {
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
                 <div className="absolute bottom-4 right-4 text-white text-right">
-                  <div className="text-sm font-medium">{imagePair.right.provider}</div>
+                  <div className="text-sm font-medium">{imagePair.provider}</div>
                   <div className="text-xs opacity-75">Tap or swipe right</div>
                 </div>
 

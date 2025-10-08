@@ -90,11 +90,13 @@ type ImageInfo struct {
 }
 
 // ImagePairResponse represents a pair of images for comparison
+// Simplified structure: both images are from the same provider
 type ImagePairResponse struct {
-	PairID string    `json:"pair_id"`
-	Prompt string    `json:"prompt"`
-	Left   ImageInfo `json:"left"`
-	Right  ImageInfo `json:"right"`
+	PairID   string `json:"pair_id"`
+	Prompt   string `json:"prompt"`
+	Provider string `json:"provider"`
+	LeftURL  string `json:"left_url"`
+	RightURL string `json:"right_url"`
 }
 
 // ComparisonRatingRequest represents a rating submission for image comparison

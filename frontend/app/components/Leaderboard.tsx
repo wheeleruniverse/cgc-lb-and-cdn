@@ -16,11 +16,16 @@ export default function Leaderboard() {
   const [totalVotes, setTotalVotes] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [initialLoad, setInitialLoad] = useState(true)
 
   useEffect(() => {
     const fetchLeaderboard = async () => {
       try {
-        setLoading(true)
+        // Only show loading spinner on initial load
+        if (initialLoad) {
+          setLoading(true)
+        }
+
         const response = await fetch('/api/v1/leaderboard')
         if (!response.ok) {
           throw new Error('Failed to fetch leaderboard')
@@ -34,19 +39,25 @@ export default function Leaderboard() {
           const statsData = await statsResponse.json()
           setTotalVotes(statsData.data.total_votes || 0)
         }
+
+        if (initialLoad) {
+          setInitialLoad(false)
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error')
       } finally {
-        setLoading(false)
+        if (initialLoad) {
+          setLoading(false)
+        }
       }
     }
 
     fetchLeaderboard()
 
-    // Refresh every 10 seconds
-    const interval = setInterval(fetchLeaderboard, 10000)
+    // Refresh every 30 seconds (less jarring than 10)
+    const interval = setInterval(fetchLeaderboard, 30000)
     return () => clearInterval(interval)
-  }, [])
+  }, [initialLoad])
 
   if (loading) {
     return (

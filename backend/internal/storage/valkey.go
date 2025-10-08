@@ -108,13 +108,30 @@ func (v *ValkeyClient) RecordVote(ctx context.Context, vote *Vote) error {
 	}
 
 	// Increment provider stats
-	// Since both images are from the same provider, we just increment that provider's stats
+	// Total votes for this provider
 	if err := v.client.HIncrBy(ctx, "provider:total", vote.Provider, 1).Err(); err != nil {
 		return fmt.Errorf("failed to increment total: %w", err)
 	}
 
-	// Track wins by side preference (which side users tend to choose)
-	// This is useful for detecting position bias (left vs right preference)
+	// Increment wins for the winning side
+	// Format: "<provider>:<side>" e.g. "google-imagen:left"
+	winnerKey := fmt.Sprintf("%s:%s", vote.Provider, vote.Winner)
+	if err := v.client.HIncrBy(ctx, "provider:wins", winnerKey, 1).Err(); err != nil {
+		return fmt.Errorf("failed to increment wins: %w", err)
+	}
+
+	// Increment losses for the losing side
+	loserSide := "right"
+	if vote.Winner == "right" {
+		loserSide = "left"
+	}
+	loserKey := fmt.Sprintf("%s:%s", vote.Provider, loserSide)
+	if err := v.client.HIncrBy(ctx, "provider:losses", loserKey, 1).Err(); err != nil {
+		return fmt.Errorf("failed to increment losses: %w", err)
+	}
+
+	// Track side preference (which side users tend to choose overall)
+	// This is useful for detecting position bias
 	if err := v.client.HIncrBy(ctx, "side:wins", vote.Winner, 1).Err(); err != nil {
 		return fmt.Errorf("failed to increment side wins: %w", err)
 	}
@@ -141,32 +158,33 @@ func (v *ValkeyClient) GetProviderStats(ctx context.Context) (map[string]*Provid
 
 	stats := make(map[string]*ProviderStats)
 
-	// Combine stats from all providers
-	allProviders := make(map[string]bool)
-	for provider := range wins {
-		allProviders[provider] = true
-	}
-	for provider := range losses {
-		allProviders[provider] = true
-	}
-	for provider := range totals {
-		allProviders[provider] = true
-	}
-
-	for provider := range allProviders {
-		winsCount := int64(0)
-		if w, ok := wins[provider]; ok {
-			fmt.Sscanf(w, "%d", &winsCount)
-		}
-
-		lossesCount := int64(0)
-		if l, ok := losses[provider]; ok {
-			fmt.Sscanf(l, "%d", &lossesCount)
-		}
-
+	// Extract unique providers from totals
+	for provider, totalStr := range totals {
 		totalCount := int64(0)
-		if t, ok := totals[provider]; ok {
-			fmt.Sscanf(t, "%d", &totalCount)
+		fmt.Sscanf(totalStr, "%d", &totalCount)
+
+		// Aggregate wins for this provider (left + right)
+		winsCount := int64(0)
+		for key, winStr := range wins {
+			// Parse "provider:side" format
+			parts := strings.Split(key, ":")
+			if len(parts) == 2 && parts[0] == provider {
+				var w int64
+				fmt.Sscanf(winStr, "%d", &w)
+				winsCount += w
+			}
+		}
+
+		// Aggregate losses for this provider (left + right)
+		lossesCount := int64(0)
+		for key, lossStr := range losses {
+			// Parse "provider:side" format
+			parts := strings.Split(key, ":")
+			if len(parts) == 2 && parts[0] == provider {
+				var l int64
+				fmt.Sscanf(lossStr, "%d", &l)
+				lossesCount += l
+			}
 		}
 
 		winRate := 0.0
@@ -261,32 +279,38 @@ func (v *ValkeyClient) GetImagePairByID(ctx context.Context, pairID string) (*Im
 }
 
 // GetRandomImagePair retrieves a random image pair from Valkey
-func (v *ValkeyClient) GetRandomImagePair(ctx context.Context) (*ImagePair, error) {
-	// Get a random pair ID from the list
-	pairID, err := v.client.LIndex(ctx, "pairs:all", 0).Result()
-	if err == redis.Nil {
-		return nil, fmt.Errorf("no pairs available")
-	}
+// excludedPairIDs allows filtering out already-voted pairs
+func (v *ValkeyClient) GetRandomImagePair(ctx context.Context, excludedPairIDs []string) (*ImagePair, error) {
+	// Get all pair IDs
+	allPairIDs, err := v.client.LRange(ctx, "pairs:all", 0, -1).Result()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get random pair ID: %w", err)
+		return nil, fmt.Errorf("failed to get pairs list: %w", err)
 	}
 
-	// Get random index
-	count, err := v.client.LLen(ctx, "pairs:all").Result()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get pairs count: %w", err)
-	}
-
-	if count == 0 {
+	if len(allPairIDs) == 0 {
 		return nil, fmt.Errorf("no pairs available")
 	}
 
-	// Get random pair ID
-	randomIndex := rand.Int63n(count)
-	pairID, err = v.client.LIndex(ctx, "pairs:all", randomIndex).Result()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get random pair ID: %w", err)
+	// Filter out excluded pairs
+	excludedMap := make(map[string]bool)
+	for _, id := range excludedPairIDs {
+		excludedMap[id] = true
 	}
+
+	availablePairs := make([]string, 0, len(allPairIDs))
+	for _, pairID := range allPairIDs {
+		if !excludedMap[pairID] {
+			availablePairs = append(availablePairs, pairID)
+		}
+	}
+
+	if len(availablePairs) == 0 {
+		return nil, fmt.Errorf("no unvoted pairs available")
+	}
+
+	// Get random pair ID from available pairs
+	randomIndex := rand.Intn(len(availablePairs))
+	pairID := availablePairs[randomIndex]
 
 	// Retrieve the pair
 	pairKey := fmt.Sprintf("pair:%s", pairID)

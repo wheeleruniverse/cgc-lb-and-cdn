@@ -308,19 +308,38 @@ func (h *ImageHandler) HealthCheck(c *gin.Context) {
 }
 
 // GetImagePair handles GET /images/pair requests
+// Supports optional "exclude" query parameter with comma-separated pair IDs
 func (h *ImageHandler) GetImagePair(c *gin.Context) {
 	if h.valkeyClient == nil {
 		utils.RespondWithError(c, http.StatusServiceUnavailable, "Image pairs unavailable", "VALKEY_UNAVAILABLE", nil)
 		return
 	}
 
-	// Get random pair from Valkey
-	pair, err := h.valkeyClient.GetRandomImagePair(c.Request.Context())
+	// Parse excluded pair IDs from query parameter
+	excludedPairIDs := []string{}
+	if excludeParam := c.Query("exclude"); excludeParam != "" {
+		excludedPairIDs = strings.Split(excludeParam, ",")
+		// Trim whitespace from each ID
+		for i, id := range excludedPairIDs {
+			excludedPairIDs[i] = strings.TrimSpace(id)
+		}
+	}
+
+	// Get random pair from Valkey, excluding already-voted pairs
+	pair, err := h.valkeyClient.GetRandomImagePair(c.Request.Context(), excludedPairIDs)
 	if err != nil {
 		// Check if it's an empty database (no pairs available yet)
 		if strings.Contains(err.Error(), "no pairs available") {
 			utils.RespondWithError(c, http.StatusNotFound, "No image pairs available yet. Images are being generated in the background - please check back in a few moments!", "NO_PAIRS_YET", map[string]string{
 				"suggestion": "Try generating a new pair or wait for automatic generation",
+			})
+			return
+		}
+
+		// Check if all pairs have been voted on
+		if strings.Contains(err.Error(), "no unvoted pairs available") {
+			utils.RespondWithError(c, http.StatusNotFound, "You've voted on all available pairs! Great job! 🎉", "ALL_PAIRS_VOTED", map[string]string{
+				"suggestion": "Check back later for new images",
 			})
 			return
 		}
@@ -332,27 +351,16 @@ func (h *ImageHandler) GetImagePair(c *gin.Context) {
 		return
 	}
 
-	// Simplified structure: both images share the same pair-id and provider
+	// Simplified response: no duplicate data
 	response := models.ImagePairResponse{
-		PairID: pair.PairID,
-		Prompt: pair.Prompt,
-		Left: models.ImageInfo{
-			ID:       pair.PairID, // Use pair-id as the identifier
-			URL:      pair.LeftURL,
-			Provider: pair.Provider,
-		},
-		Right: models.ImageInfo{
-			ID:       pair.PairID, // Use pair-id as the identifier
-			URL:      pair.RightURL,
-			Provider: pair.Provider,
-		},
+		PairID:   pair.PairID,
+		Prompt:   pair.Prompt,
+		Provider: pair.Provider,
+		LeftURL:  pair.LeftURL,
+		RightURL: pair.RightURL,
 	}
 
-	utils.RespondWithSuccess(c, response, "Image pair retrieved successfully", map[string]string{
-		"pair_id":  pair.PairID,
-		"prompt":   pair.Prompt,
-		"provider": pair.Provider,
-	})
+	utils.RespondWithSuccess(c, response, "Image pair retrieved successfully", nil)
 }
 
 // SubmitRating handles POST /images/rate requests
