@@ -15,8 +15,6 @@ import (
 	"time"
 
 	"cgc-lb-and-cdn-backend/internal/models"
-
-	"github.com/google/uuid"
 )
 
 const (
