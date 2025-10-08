@@ -713,7 +713,7 @@ CONSOLIDATED="/tmp/cgc-lb-and-cdn-logs-${TIMESTAMP}.log"
   echo "Load Average: $(cat /proc/loadavg)"
   echo "Memory: $(free -h | grep Mem)"
   echo "Disk: $(df -h / | tail -n 1)"
-  echo "Active Connections: $(netstat -an | grep ESTABLISHED | wc -l)"
+  echo "Active Connections: $(ss -tan | grep ESTAB | wc -l)"
   echo ""
 
   echo "================================"
@@ -820,19 +820,23 @@ chmod +x /usr/local/bin/generate-images.sh
 # Set up crontab with multiple jobs
 cat > /tmp/crontab.txt << 'CRONEOF'
 # Upload logs every N minutes (configurable via environment)
-*/${LOG_UPLOAD_INTERVAL_MINUTES} * * * * LOG_UPLOAD_INTERVAL_MINUTES=${LOG_UPLOAD_INTERVAL_MINUTES} DO_SPACES_ACCESS_KEY=${DO_SPACES_ACCESS_KEY} DO_SPACES_SECRET_KEY=${DO_SPACES_SECRET_KEY} /usr/local/bin/upload-logs.sh >> /var/log/cgc-lb-and-cdn-log-upload.log 2>&1
+*/${LOG_UPLOAD_INTERVAL_MINUTES} * * * * DO_SPACES_BUCKET=${DO_SPACES_BUCKET} DO_SPACES_ACCESS_KEY=${DO_SPACES_ACCESS_KEY} DO_SPACES_SECRET_KEY=${DO_SPACES_SECRET_KEY} /usr/local/bin/upload-logs.sh >> /var/log/cgc-lb-and-cdn-log-upload.log 2>&1
 
 # Generate image pairs every 15 minutes to keep database populated
-*/15 * * * * /usr/local/bin/generate-images.sh
+*/15 * * * * DO_VALKEY_HOST=${DO_VALKEY_HOST} DO_VALKEY_PORT=${DO_VALKEY_PORT} DO_VALKEY_PASSWORD=${DO_VALKEY_PASSWORD} /usr/local/bin/generate-images.sh
 
 # Generate extra images during peak hours (9 AM - 9 PM) every 5 minutes
-*/5 9-21 * * * /usr/local/bin/generate-images.sh
+*/5 9-21 * * * DO_VALKEY_HOST=${DO_VALKEY_HOST} DO_VALKEY_PORT=${DO_VALKEY_PORT} DO_VALKEY_PASSWORD=${DO_VALKEY_PASSWORD} /usr/local/bin/generate-images.sh
 CRONEOF
 
 # Expand environment variables in crontab
 sed -i "s/\${LOG_UPLOAD_INTERVAL_MINUTES}/${LOG_UPLOAD_INTERVAL_MINUTES}/g" /tmp/crontab.txt
+sed -i "s/\${DO_SPACES_BUCKET}/${DO_SPACES_BUCKET}/g" /tmp/crontab.txt
 sed -i "s/\${DO_SPACES_ACCESS_KEY}/${DO_SPACES_ACCESS_KEY}/g" /tmp/crontab.txt
 sed -i "s/\${DO_SPACES_SECRET_KEY}/${DO_SPACES_SECRET_KEY}/g" /tmp/crontab.txt
+sed -i "s/\${DO_VALKEY_HOST}/${DO_VALKEY_HOST}/g" /tmp/crontab.txt
+sed -i "s/\${DO_VALKEY_PORT}/${DO_VALKEY_PORT}/g" /tmp/crontab.txt
+sed -i "s|\${DO_VALKEY_PASSWORD}|${DO_VALKEY_PASSWORD}|g" /tmp/crontab.txt
 
 # Install crontab
 crontab /tmp/crontab.txt
