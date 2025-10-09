@@ -424,68 +424,10 @@ func (h *ImageHandler) SubmitRating(c *gin.Context) {
 	})
 }
 
-// GetLeaderboard handles GET /leaderboard requests
-func (h *ImageHandler) GetLeaderboard(c *gin.Context) {
-	if h.valkeyClient == nil {
-		utils.RespondWithError(c, http.StatusServiceUnavailable, "Leaderboard unavailable", "VALKEY_UNAVAILABLE", nil)
-		return
-	}
-
-	stats, err := h.valkeyClient.GetProviderStats(c.Request.Context())
-	if err != nil {
-		utils.RespondWithError(c, http.StatusInternalServerError, "Failed to get leaderboard", "LEADERBOARD_ERROR", map[string]string{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	// Convert map to sorted slice
-	type LeaderboardEntry struct {
-		Provider   string  `json:"provider"`
-		Wins       int64   `json:"wins"`
-		Losses     int64   `json:"losses"`
-		TotalVotes int64   `json:"total_votes"`
-		WinRate    float64 `json:"win_rate"`
-	}
-
-	leaderboard := make([]LeaderboardEntry, 0, len(stats))
-	for _, stat := range stats {
-		leaderboard = append(leaderboard, LeaderboardEntry{
-			Provider:   stat.Provider,
-			Wins:       stat.Wins,
-			Losses:     stat.Losses,
-			TotalVotes: stat.TotalVotes,
-			WinRate:    stat.WinRate,
-		})
-	}
-
-	// Sort by wins descending
-	for i := 0; i < len(leaderboard)-1; i++ {
-		for j := i + 1; j < len(leaderboard); j++ {
-			if leaderboard[j].Wins > leaderboard[i].Wins {
-				leaderboard[i], leaderboard[j] = leaderboard[j], leaderboard[i]
-			}
-		}
-	}
-
-	utils.RespondWithSuccess(c, gin.H{
-		"leaderboard": leaderboard,
-		"timestamp":   time.Now().UTC().Format(time.RFC3339),
-	}, "Leaderboard retrieved successfully", nil)
-}
-
 // GetStatistics handles GET /statistics requests
 func (h *ImageHandler) GetStatistics(c *gin.Context) {
 	if h.valkeyClient == nil {
 		utils.RespondWithError(c, http.StatusServiceUnavailable, "Statistics unavailable", "VALKEY_UNAVAILABLE", nil)
-		return
-	}
-
-	stats, err := h.valkeyClient.GetProviderStats(c.Request.Context())
-	if err != nil {
-		utils.RespondWithError(c, http.StatusInternalServerError, "Failed to get statistics", "STATISTICS_ERROR", map[string]string{
-			"error": err.Error(),
-		})
 		return
 	}
 
@@ -506,7 +448,6 @@ func (h *ImageHandler) GetStatistics(c *gin.Context) {
 	}
 
 	utils.RespondWithSuccess(c, gin.H{
-		"providers":   stats,
 		"total_votes": totalVotes,
 		"side_wins":   sideWins,
 		"timestamp":   time.Now().UTC().Format(time.RFC3339),

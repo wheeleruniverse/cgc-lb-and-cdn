@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -39,15 +38,6 @@ type ImagePair struct {
 	LeftURL   string    `json:"left_url"`  // CDN URL for left image
 	RightURL  string    `json:"right_url"` // CDN URL for right image
 	Timestamp time.Time `json:"timestamp"`
-}
-
-// ProviderStats represents aggregated statistics for a provider
-type ProviderStats struct {
-	Provider   string  `json:"provider"`
-	Wins       int64   `json:"wins"`
-	Losses     int64   `json:"losses"`
-	TotalVotes int64   `json:"total_votes"`
-	WinRate    float64 `json:"win_rate"`
 }
 
 // NewValkeyClient creates a new Valkey client
@@ -108,29 +98,6 @@ func (v *ValkeyClient) RecordVote(ctx context.Context, vote *Vote) error {
 		return fmt.Errorf("failed to trim votes list: %w", err)
 	}
 
-	// Increment provider stats
-	// Total votes for this provider
-	if err := v.client.HIncrBy(ctx, "provider:total", vote.Provider, 1).Err(); err != nil {
-		return fmt.Errorf("failed to increment total: %w", err)
-	}
-
-	// Increment wins for the winning side
-	// Format: "<provider>:<side>" e.g. "google-imagen:left"
-	winnerKey := fmt.Sprintf("%s:%s", vote.Provider, vote.Winner)
-	if err := v.client.HIncrBy(ctx, "provider:wins", winnerKey, 1).Err(); err != nil {
-		return fmt.Errorf("failed to increment wins: %w", err)
-	}
-
-	// Increment losses for the losing side
-	loserSide := "right"
-	if vote.Winner == "right" {
-		loserSide = "left"
-	}
-	loserKey := fmt.Sprintf("%s:%s", vote.Provider, loserSide)
-	if err := v.client.HIncrBy(ctx, "provider:losses", loserKey, 1).Err(); err != nil {
-		return fmt.Errorf("failed to increment losses: %w", err)
-	}
-
 	// Track side preference (which side users tend to choose overall)
 	// This is useful for detecting position bias
 	if err := v.client.HIncrBy(ctx, "side:wins", vote.Winner, 1).Err(); err != nil {
@@ -138,71 +105,6 @@ func (v *ValkeyClient) RecordVote(ctx context.Context, vote *Vote) error {
 	}
 
 	return nil
-}
-
-// GetProviderStats retrieves statistics for all providers
-func (v *ValkeyClient) GetProviderStats(ctx context.Context) (map[string]*ProviderStats, error) {
-	wins, err := v.client.HGetAll(ctx, "provider:wins").Result()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get wins: %w", err)
-	}
-
-	losses, err := v.client.HGetAll(ctx, "provider:losses").Result()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get losses: %w", err)
-	}
-
-	totals, err := v.client.HGetAll(ctx, "provider:total").Result()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get totals: %w", err)
-	}
-
-	stats := make(map[string]*ProviderStats)
-
-	// Extract unique providers from totals
-	for provider, totalStr := range totals {
-		totalCount := int64(0)
-		fmt.Sscanf(totalStr, "%d", &totalCount)
-
-		// Aggregate wins for this provider (left + right)
-		winsCount := int64(0)
-		for key, winStr := range wins {
-			// Parse "provider:side" format
-			parts := strings.Split(key, ":")
-			if len(parts) == 2 && parts[0] == provider {
-				var w int64
-				fmt.Sscanf(winStr, "%d", &w)
-				winsCount += w
-			}
-		}
-
-		// Aggregate losses for this provider (left + right)
-		lossesCount := int64(0)
-		for key, lossStr := range losses {
-			// Parse "provider:side" format
-			parts := strings.Split(key, ":")
-			if len(parts) == 2 && parts[0] == provider {
-				var l int64
-				fmt.Sscanf(lossStr, "%d", &l)
-				lossesCount += l
-			}
-		}
-
-		winRate := 0.0
-		if totalCount > 0 {
-			winRate = float64(winsCount) / float64(totalCount) * 100
-		}
-
-		stats[provider] = &ProviderStats{
-			Provider:   provider,
-			Wins:       winsCount,
-			Losses:     lossesCount,
-			TotalVotes: totalCount,
-			WinRate:    winRate,
-		}
-	}
-
-	return stats, nil
 }
 
 // GetTotalVotes returns the total number of votes recorded

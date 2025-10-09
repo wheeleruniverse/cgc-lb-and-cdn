@@ -49,7 +49,6 @@ func main() {
 	log.Printf("  GET  /api/v1/status - Get provider status")
 	log.Printf("  GET  /api/v1/images/pair - Get random image pair")
 	log.Printf("  POST /api/v1/images/rate - Submit comparison rating")
-	log.Printf("  GET  /api/v1/leaderboard - Get provider leaderboard")
 	log.Printf("  GET  /api/v1/statistics - Get voting statistics")
 	log.Printf("  GET  /api/v1/images/winners?side=left|right - Get winning images")
 
@@ -114,7 +113,6 @@ func setupRouter(imageHandler *handlers.ImageHandler) *gin.Engine {
 		api.GET("/status", imageHandler.GetProviderStatus)
 		api.GET("/images/pair", imageHandler.GetImagePair)
 		api.POST("/images/rate", imageHandler.SubmitRating)
-		api.GET("/leaderboard", imageHandler.GetLeaderboard)
 		api.GET("/statistics", imageHandler.GetStatistics)
 		api.GET("/images/winners", imageHandler.GetWinners)
 	}
