@@ -497,9 +497,18 @@ func (h *ImageHandler) GetStatistics(c *gin.Context) {
 		return
 	}
 
+	sideWins, err := h.valkeyClient.GetSideWins(c.Request.Context())
+	if err != nil {
+		utils.RespondWithError(c, http.StatusInternalServerError, "Failed to get side wins", "STATISTICS_ERROR", map[string]string{
+			"error": err.Error(),
+		})
+		return
+	}
+
 	utils.RespondWithSuccess(c, gin.H{
 		"providers":   stats,
 		"total_votes": totalVotes,
+		"side_wins":   sideWins,
 		"timestamp":   time.Now().UTC().Format(time.RFC3339),
 	}, "Statistics retrieved successfully", nil)
 }

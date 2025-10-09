@@ -214,6 +214,27 @@ func (v *ValkeyClient) GetTotalVotes(ctx context.Context) (int64, error) {
 	return count, nil
 }
 
+// GetSideWins returns the vote counts for left and right sides
+func (v *ValkeyClient) GetSideWins(ctx context.Context) (map[string]int64, error) {
+	sideWins, err := v.client.HGetAll(ctx, "side:wins").Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get side wins: %w", err)
+	}
+
+	result := map[string]int64{
+		"left":  0,
+		"right": 0,
+	}
+
+	for side, countStr := range sideWins {
+		var count int64
+		fmt.Sscanf(countStr, "%d", &count)
+		result[side] = count
+	}
+
+	return result, nil
+}
+
 // GetRecentVotes retrieves the most recent votes
 func (v *ValkeyClient) GetRecentVotes(ctx context.Context, limit int64) ([]*Vote, error) {
 	voteStrings, err := v.client.LRange(ctx, "votes:all", 0, limit-1).Result()

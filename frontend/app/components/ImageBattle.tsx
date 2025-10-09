@@ -32,6 +32,24 @@ export default function ImageBattle() {
   })
   const [showWinnersGrid, setShowWinnersGrid] = useState<'left' | 'right' | null>(null)
 
+  // Fetch team scores from backend
+  const fetchTeamScores = async () => {
+    try {
+      const response = await fetch('/api/v1/statistics')
+      if (response.ok) {
+        const data = await response.json()
+        if (data.data && data.data.side_wins) {
+          setTeamScores({
+            left: data.data.side_wins.left || 0,
+            right: data.data.side_wins.right || 0,
+          })
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch team scores:', err)
+    }
+  }
+
   // Spring animation for the main container
   const [{ x, rotate, scale }, api] = useSpring(() => ({
     x: 0,
@@ -97,11 +115,8 @@ export default function ImageBattle() {
         localStorage.setItem('votedPairIds', JSON.stringify(newVotedPairIds))
       }
 
-      // Update team scores
-      setTeamScores(prev => ({
-        ...prev,
-        [winner]: prev[winner] + 1
-      }))
+      // Fetch updated team scores from backend
+      fetchTeamScores()
 
       // Wait for animation to complete
       setTimeout(() => {
@@ -145,6 +160,11 @@ export default function ImageBattle() {
 
   useEffect(() => {
     fetchImagePair()
+    fetchTeamScores()
+
+    // Refresh team scores every 30 seconds
+    const interval = setInterval(fetchTeamScores, 30000)
+    return () => clearInterval(interval)
   }, [])
 
   // Keyboard controls for desktop
