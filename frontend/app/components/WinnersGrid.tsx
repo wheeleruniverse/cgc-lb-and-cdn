@@ -9,6 +9,7 @@ interface WinnerImage {
   provider: string
   pair_id: string
   timestamp: string
+  vote_count: number
 }
 
 interface WinnersGridProps {
@@ -148,6 +149,11 @@ export default function WinnersGrid({ side, onClose }: WinnersGridProps) {
                         {/* Winner Badge */}
                         <div className="absolute top-2 right-2 bg-yellow-500 text-yellow-900 rounded-full w-10 h-10 flex items-center justify-center font-bold text-xl shadow-lg">
                           🏆
+                        </div>
+                        {/* Vote Count Badge */}
+                        <div className="absolute top-2 left-2 bg-black/70 backdrop-blur-sm text-white rounded-full px-3 py-1 flex items-center gap-1 text-sm font-semibold shadow-lg">
+                          <span>❤️</span>
+                          <span>{winner.vote_count}</span>
                         </div>
                       </div>
 

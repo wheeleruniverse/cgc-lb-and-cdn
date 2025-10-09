@@ -254,9 +254,16 @@ func (v *ValkeyClient) GetRandomImagePair(ctx context.Context, excludedPairIDs [
 	return &pair, nil
 }
 
+// WinningImagePair extends ImagePair with vote count information
+type WinningImagePair struct {
+	ImagePair
+	VoteCount int64 `json:"vote_count"` // Number of votes this pair won with
+}
+
 // GetWinningImages retrieves all images that won their battles for the specified side
+// Returns pairs sorted by vote count (descending)
 // side parameter should be "left" or "right"
-func (v *ValkeyClient) GetWinningImages(ctx context.Context, side string) ([]ImagePair, error) {
+func (v *ValkeyClient) GetWinningImages(ctx context.Context, side string) ([]WinningImagePair, error) {
 	// Validate side parameter
 	if side != "left" && side != "right" {
 		return nil, fmt.Errorf("invalid side parameter: must be 'left' or 'right'")
@@ -268,8 +275,8 @@ func (v *ValkeyClient) GetWinningImages(ctx context.Context, side string) ([]Ima
 		return nil, fmt.Errorf("failed to get votes: %w", err)
 	}
 
-	// Track winning images by pair ID
-	winningPairIDs := make(map[string]bool)
+	// Track winning images by pair ID with vote counts
+	winningPairVotes := make(map[string]int64)
 	for _, voteStr := range voteStrings {
 		var vote Vote
 		if err := json.Unmarshal([]byte(voteStr), &vote); err != nil {
@@ -278,13 +285,13 @@ func (v *ValkeyClient) GetWinningImages(ctx context.Context, side string) ([]Ima
 
 		// Only include winners for the specified side
 		if vote.Winner == side {
-			winningPairIDs[vote.PairID] = true
+			winningPairVotes[vote.PairID]++
 		}
 	}
 
-	// Retrieve the winning pairs
-	var winningPairs []ImagePair
-	for pairID := range winningPairIDs {
+	// Retrieve the winning pairs with vote counts
+	var winningPairs []WinningImagePair
+	for pairID, voteCount := range winningPairVotes {
 		pairKey := fmt.Sprintf("pair:%s", pairID)
 		pairJSON, err := v.client.Get(ctx, pairKey).Result()
 		if err == redis.Nil {
@@ -299,7 +306,19 @@ func (v *ValkeyClient) GetWinningImages(ctx context.Context, side string) ([]Ima
 			continue // Skip malformed pairs
 		}
 
-		winningPairs = append(winningPairs, pair)
+		winningPairs = append(winningPairs, WinningImagePair{
+			ImagePair: pair,
+			VoteCount: voteCount,
+		})
+	}
+
+	// Sort by vote count descending (most votes first)
+	for i := 0; i < len(winningPairs)-1; i++ {
+		for j := i + 1; j < len(winningPairs); j++ {
+			if winningPairs[j].VoteCount > winningPairs[i].VoteCount {
+				winningPairs[i], winningPairs[j] = winningPairs[j], winningPairs[i]
+			}
+		}
 	}
 
 	return winningPairs, nil

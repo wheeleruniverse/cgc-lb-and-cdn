@@ -487,6 +487,7 @@ func (h *ImageHandler) GetWinners(c *gin.Context) {
 		Provider  string `json:"provider"`
 		PairID    string `json:"pair_id"`
 		Timestamp string `json:"timestamp"`
+		VoteCount int64  `json:"vote_count"`
 	}
 
 	var winners []WinnerImage
@@ -502,6 +503,7 @@ func (h *ImageHandler) GetWinners(c *gin.Context) {
 			Provider:  pair.Provider,
 			PairID:    pair.PairID,
 			Timestamp: pair.Timestamp.Format(time.RFC3339),
+			VoteCount: pair.VoteCount,
 		})
 	}
 
