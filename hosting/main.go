@@ -115,8 +115,21 @@ func main() {
 				Region:  pulumi.String("nyc3"),
 				VpcUuid: vpc.ID(),
 				UserData: pulumi.All(valkeyCluster.Host, valkeyCluster.Port, valkeyCluster.Password, spaceBucket.Name, spaceBucket.Region).ApplyT(func(args []interface{}) string {
-					bucketName := args[3].(string)
-					return getFullStackUserData(sha, googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, bucketName, spaceBucketEndpoint, spacesAccessKey, spacesSecretKey, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string), recreateValkey)
+					return getFullStackUserData(UserDataConfig{
+						DeploymentSHA:   sha,
+						GoogleAPIKey:    googleAPIKey,
+						LeonardoAPIKey:  leonardoAPIKey,
+						FreepikAPIKey:   freepikAPIKey,
+						UseDoSpaces:     useDoSpaces,
+						SpacesBucket:    args[3].(string),
+						SpacesEndpoint:  spaceBucketEndpoint,
+						SpacesAccessKey: spacesAccessKey,
+						SpacesSecretKey: spacesSecretKey,
+						ValkeyHost:      args[0].(string),
+						ValkeyPort:      fmt.Sprintf("%v", args[1]),
+						ValkeyPassword:  args[2].(string),
+						RecreateValkey:  recreateValkey,
+					})
 				}).(pulumi.StringOutput),
 				// Tags removed due to permission issues
 			})
@@ -359,8 +372,25 @@ func convertDropletsToResources(droplets []*digitalocean.Droplet) []pulumi.Resou
 	return resources
 }
 
+// UserDataConfig holds all configuration needed to generate the cloud-init user data script
+type UserDataConfig struct {
+	DeploymentSHA   string
+	GoogleAPIKey    string
+	LeonardoAPIKey  string
+	FreepikAPIKey   string
+	UseDoSpaces     string
+	SpacesBucket    string
+	SpacesEndpoint  string
+	SpacesAccessKey string
+	SpacesSecretKey string
+	ValkeyHost      string
+	ValkeyPort      string
+	ValkeyPassword  string
+	RecreateValkey  string
+}
+
 // getFullStackUserData returns cloud-init script to deploy both backend and frontend on each droplet
-func getFullStackUserData(sha, googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, bucketName, spacesEndpoint, spacesAccessKey, spacesSecretKey, valkeyHost, valkeyPort, valkeyPassword, recreateValkey string) string {
+func getFullStackUserData(config UserDataConfig) string {
 	return fmt.Sprintf(`#!/bin/bash
 set -e
 
@@ -977,19 +1007,19 @@ echo "================================"
 # - Frontend: PM2 startup configured
 shutdown -r +1 "Rebooting to apply system updates and verify service auto-start"
 `,
-		// All variables passed once at the beginning (13 placeholders total)
-		sha,
-		googleAPIKey,
-		leonardoAPIKey,
-		freepikAPIKey,
-		useDoSpaces,
-		bucketName,
-		spacesEndpoint,
-		spacesAccessKey,
-		spacesSecretKey,
-		valkeyHost,
-		valkeyPort,
-		valkeyPassword,
-		recreateValkey,
+		// All variables passed from config struct (13 placeholders total)
+		config.DeploymentSHA,
+		config.GoogleAPIKey,
+		config.LeonardoAPIKey,
+		config.FreepikAPIKey,
+		config.UseDoSpaces,
+		config.SpacesBucket,
+		config.SpacesEndpoint,
+		config.SpacesAccessKey,
+		config.SpacesSecretKey,
+		config.ValkeyHost,
+		config.ValkeyPort,
+		config.ValkeyPassword,
+		config.RecreateValkey,
 	)
 }
