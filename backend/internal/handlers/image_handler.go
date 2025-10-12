@@ -309,11 +309,15 @@ func (h *ImageHandler) HealthCheck(c *gin.Context) {
 
 // GetImagePair handles GET /images/pair requests
 // Supports optional "exclude" query parameter with comma-separated pair IDs
+// Supports optional "session_id" query parameter for session-based tracking
 func (h *ImageHandler) GetImagePair(c *gin.Context) {
 	if h.valkeyClient == nil {
 		utils.RespondWithError(c, http.StatusServiceUnavailable, "Image pairs unavailable", "VALKEY_UNAVAILABLE", nil)
 		return
 	}
+
+	// Get session ID from query parameter (optional)
+	sessionID := c.Query("session_id")
 
 	// Parse excluded pair IDs from query parameter
 	excludedPairIDs := []string{}
@@ -325,8 +329,17 @@ func (h *ImageHandler) GetImagePair(c *gin.Context) {
 		}
 	}
 
-	// Get random pair from Valkey, excluding already-voted pairs
-	pair, err := h.valkeyClient.GetRandomImagePair(c.Request.Context(), excludedPairIDs)
+	// Get random pair from Valkey
+	var pair *storage.ImagePair
+	var err error
+
+	if sessionID != "" {
+		// Use session-based tracking to avoid showing same images to same user
+		pair, err = h.valkeyClient.GetRandomImagePairForSession(c.Request.Context(), sessionID, excludedPairIDs)
+	} else {
+		// Fallback to original behavior (only use explicit exclusions)
+		pair, err = h.valkeyClient.GetRandomImagePair(c.Request.Context(), excludedPairIDs)
+	}
 	if err != nil {
 		// Check if it's an empty database (no pairs available yet)
 		if strings.Contains(err.Error(), "no pairs available") {

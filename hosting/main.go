@@ -30,10 +30,10 @@ func main() {
 		spacesAccessKey := cfg.Get("do_spaces_access_key")
 		spacesSecretKey := cfg.Get("do_spaces_secret_key")
 
-		// Get Valkey flush option from Pulumi config (optional)
-		flushValkey := cfg.Get("flush_valkey")
-		if flushValkey == "" {
-			flushValkey = "false" // Default to not flushing
+		// Get Valkey recreate option from Pulumi config (optional)
+		recreateValkey := cfg.Get("recreate_valkey")
+		if recreateValkey == "" {
+			recreateValkey = "false" // Default to not recreating
 		}
 
 		// Note: In GitHub Actions, these should be passed as:
@@ -85,6 +85,23 @@ func main() {
 			return err
 		}
 
+		// Configure Valkey firewall to ONLY allow VPC access (no public access)
+		// This ensures the cluster is only accessible from droplets within the VPC
+		_, err = digitalocean.NewDatabaseFirewall(ctx, "cgc-lb-and-cdn-valkey-firewall", &digitalocean.DatabaseFirewallArgs{
+			ClusterId: valkeyCluster.ID(),
+			Rules: digitalocean.DatabaseFirewallRuleArray{
+				// Allow access only from the VPC
+				&digitalocean.DatabaseFirewallRuleArgs{
+					Type:  pulumi.String("vpc"),
+					Value: vpc.ID(),
+				},
+				// Note: No public access rules - cluster is VPC-only
+			},
+		})
+		if err != nil {
+			return err
+		}
+
 		// Create droplets dynamically based on droplet_count
 		// Each droplet runs both backend and frontend applications
 		droplets := make([]*digitalocean.Droplet, dropletCount)
@@ -99,7 +116,7 @@ func main() {
 				VpcUuid: vpc.ID(),
 				UserData: pulumi.All(valkeyCluster.Host, valkeyCluster.Port, valkeyCluster.Password, spaceBucket.Name, spaceBucket.Region).ApplyT(func(args []interface{}) string {
 					bucketName := args[3].(string)
-					return getFullStackUserData(sha, googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, bucketName, spaceBucketEndpoint, spacesAccessKey, spacesSecretKey, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string), flushValkey)
+					return getFullStackUserData(sha, googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, bucketName, spaceBucketEndpoint, spacesAccessKey, spacesSecretKey, args[0].(string), fmt.Sprintf("%v", args[1]), args[2].(string), recreateValkey)
 				}).(pulumi.StringOutput),
 				// Tags removed due to permission issues
 			})
@@ -343,7 +360,7 @@ func convertDropletsToResources(droplets []*digitalocean.Droplet) []pulumi.Resou
 }
 
 // getFullStackUserData returns cloud-init script to deploy both backend and frontend on each droplet
-func getFullStackUserData(sha, googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, bucketName, spacesEndpoint, spacesAccessKey, spacesSecretKey, valkeyHost, valkeyPort, valkeyPassword, flushValkey string) string {
+func getFullStackUserData(sha, googleAPIKey, leonardoAPIKey, freepikAPIKey, useDoSpaces, bucketName, spacesEndpoint, spacesAccessKey, spacesSecretKey, valkeyHost, valkeyPort, valkeyPassword, recreateValkey string) string {
 	return fmt.Sprintf(`#!/bin/bash
 set -e
 
@@ -360,7 +377,7 @@ DO_SPACES_SECRET_KEY="%s"
 DO_VALKEY_HOST="%s"
 DO_VALKEY_PORT="%s"
 DO_VALKEY_PASSWORD="%s"
-FLUSH_VALKEY="%s"
+RECREATE_VALKEY="%s"
 
 # Setup logging
 LOGFILE="/var/log/cgc-lb-and-cdn-deployment.log"
@@ -499,14 +516,79 @@ systemctl status cgc-lb-and-cdn-backend.service --no-pager || true
 echo "[$(date)] Testing health endpoint..."
 curl -v http://localhost:8080/health || echo "Health check failed!"
 
-# Flush Valkey if requested (clears all cached data)
-if [ "${FLUSH_VALKEY}" = "true" ]; then
-  echo "[$(date)] Flushing Valkey database (clearing all cached data)..."
+# Recreate Valkey indexes from DO Spaces if requested (rebuilds from single source of truth)
+if [ "${RECREATE_VALKEY}" = "true" ]; then
+  echo "[$(date)] Recreating Valkey indexes from DO Spaces..."
+  echo "[$(date)] This will rebuild the image pair indexes from the data stored in DO Spaces"
+
+  # First, flush the existing Valkey data
+  echo "[$(date)] Flushing existing Valkey data..."
   redis-cli -h ${DO_VALKEY_HOST} -p ${DO_VALKEY_PORT} -a ${DO_VALKEY_PASSWORD} --tls FLUSHALL && \
     echo "[$(date)] ✅ Valkey database flushed successfully" || \
     echo "[$(date)] ⚠️  Failed to flush Valkey database"
+
+  # List all objects in the images/ prefix from DO Spaces
+  echo "[$(date)] Reading image pairs from DO Spaces (bucket: ${DO_SPACES_BUCKET})..."
+
+  # Structure: images/<provider>/<pair_id>/<side>.png
+  # We need to find all unique pair_id values
+  TEMP_LISTING="/tmp/spaces-listing.txt"
+  s3cmd ls --recursive "s3://${DO_SPACES_BUCKET}/images/" > "$TEMP_LISTING" 2>&1 || {
+    echo "[$(date)] ⚠️  Failed to list DO Spaces objects"
+    echo "[$(date)] Continuing with empty Valkey - bootstrap will generate new pairs"
+  }
+
+  if [ -f "$TEMP_LISTING" ] && [ -s "$TEMP_LISTING" ]; then
+    # Extract unique pair IDs from the listing
+    # Expected format: 2024-01-01 12:00  12345  s3://bucket/images/provider/pair-id/side.png
+    PAIR_COUNT=0
+
+    # Process each unique pair_id
+    for PROVIDER_DIR in $(s3cmd ls "s3://${DO_SPACES_BUCKET}/images/" | grep DIR | awk '{print $2}'); do
+      PROVIDER_NAME=$(basename "$PROVIDER_DIR" | sed 's:/$::')
+      echo "[$(date)] Processing provider: ${PROVIDER_NAME}"
+
+      for PAIR_DIR in $(s3cmd ls "${PROVIDER_DIR}" | grep DIR | awk '{print $2}'); do
+        PAIR_ID=$(basename "$PAIR_DIR" | sed 's:/$::')
+
+        # Check if both left.png and right.png exist
+        LEFT_URL="https://${DO_SPACES_BUCKET}.${DO_SPACES_ENDPOINT}/images/${PROVIDER_NAME}/${PAIR_ID}/left.png"
+        RIGHT_URL="https://${DO_SPACES_BUCKET}.${DO_SPACES_ENDPOINT}/images/${PROVIDER_NAME}/${PAIR_ID}/right.png"
+
+        # Get metadata from left image (contains prompt and other info)
+        METADATA_FILE="/tmp/metadata-${PAIR_ID}.txt"
+        s3cmd info "s3://${DO_SPACES_BUCKET}/images/${PROVIDER_NAME}/${PAIR_ID}/left.png" > "$METADATA_FILE" 2>&1
+
+        # Extract prompt from metadata (stored as x-amz-meta-prompt header)
+        PROMPT=$(grep -i "x-amz-meta-prompt" "$METADATA_FILE" | cut -d: -f2- | xargs)
+        if [ -z "$PROMPT" ]; then
+          PROMPT="Unknown prompt"
+        fi
+
+        # Store the pair in Valkey using the same format as the backend
+        # We'll use redis-cli to store the JSON directly
+        TIMESTAMP=$(date -Iseconds)
+        PAIR_JSON="{\"pair_id\":\"${PAIR_ID}\",\"prompt\":\"${PROMPT}\",\"provider\":\"${PROVIDER_NAME}\",\"left_url\":\"${LEFT_URL}\",\"right_url\":\"${RIGHT_URL}\",\"timestamp\":\"${TIMESTAMP}\"}"
+
+        # Store pair in Valkey
+        redis-cli -h ${DO_VALKEY_HOST} -p ${DO_VALKEY_PORT} -a ${DO_VALKEY_PASSWORD} --tls \
+          SET "pair:${PAIR_ID}" "$PAIR_JSON" >/dev/null 2>&1 && \
+        redis-cli -h ${DO_VALKEY_HOST} -p ${DO_VALKEY_PORT} -a ${DO_VALKEY_PASSWORD} --tls \
+          LPUSH "pairs:all" "${PAIR_ID}" >/dev/null 2>&1 && \
+          PAIR_COUNT=$((PAIR_COUNT + 1))
+
+        rm -f "$METADATA_FILE"
+      done
+    done
+
+    echo "[$(date)] ✅ Recreated ${PAIR_COUNT} image pairs in Valkey from DO Spaces"
+    rm -f "$TEMP_LISTING"
+  else
+    echo "[$(date)] ⚠️  No images found in DO Spaces, Valkey will be empty"
+    echo "[$(date)] Bootstrap process will generate initial pairs"
+  fi
 else
-  echo "[$(date)] Valkey flush not requested, preserving existing data"
+  echo "[$(date)] Valkey recreation not requested, preserving existing data"
 fi
 
 # Bootstrap: Generate initial image pairs to prevent empty database
@@ -908,6 +990,6 @@ shutdown -r +1 "Rebooting to apply system updates and verify service auto-start"
 		valkeyHost,
 		valkeyPort,
 		valkeyPassword,
-		flushValkey,
+		recreateValkey,
 	)
 }

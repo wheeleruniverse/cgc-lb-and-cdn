@@ -3,8 +3,8 @@ name: Deploy Infrastructure
 on:
   workflow_dispatch:
     inputs:
-      flush_valkey:
-        description: 'Flush Valkey database on deployment (clears all data)'
+      recreate_valkey:
+        description: 'Recreate Valkey indexes from DO Spaces on deployment (rebuilds from single source of truth)'
         required: false
         default: 'false'
         type: choice
@@ -52,8 +52,8 @@ jobs:
         # Configure deployment SHA
         pulumi config set cgc-lb-and-cdn:sha "${{ github.sha }}"
 
-        # Configure Valkey flush option
-        pulumi config set cgc-lb-and-cdn:flush_valkey "${{ github.event.inputs.flush_valkey || 'false' }}"
+        # Configure Valkey recreate option
+        pulumi config set cgc-lb-and-cdn:recreate_valkey "${{ github.event.inputs.recreate_valkey || 'false' }}"
 
         # Configure API keys as Pulumi secrets
         pulumi config set --secret cgc-lb-and-cdn:google_api_key "${{ secrets.GOOGLE_API_KEY }}"

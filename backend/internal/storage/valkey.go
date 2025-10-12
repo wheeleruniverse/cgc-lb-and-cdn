@@ -260,6 +260,85 @@ type WinningImagePair struct {
 	VoteCount int64 `json:"vote_count"` // Number of votes this pair won with
 }
 
+// MarkImageAsViewed records that a session has viewed a specific image pair
+// This helps prevent showing the same images to the same user in a short period
+func (v *ValkeyClient) MarkImageAsViewed(ctx context.Context, sessionID string, pairID string) error {
+	// Store viewed pair ID in a set for this session
+	// Key format: session:<session_id>:viewed
+	// Set expires after 24 hours (session lifetime)
+	sessionKey := fmt.Sprintf("session:%s:viewed", sessionID)
+
+	// Add pair ID to the session's viewed set
+	if err := v.client.SAdd(ctx, sessionKey, pairID).Err(); err != nil {
+		return fmt.Errorf("failed to mark image as viewed: %w", err)
+	}
+
+	// Set expiration on the session key (24 hours)
+	if err := v.client.Expire(ctx, sessionKey, 24*time.Hour).Err(); err != nil {
+		return fmt.Errorf("failed to set session expiration: %w", err)
+	}
+
+	return nil
+}
+
+// GetViewedPairIDs retrieves all pair IDs that a session has already viewed
+func (v *ValkeyClient) GetViewedPairIDs(ctx context.Context, sessionID string) ([]string, error) {
+	sessionKey := fmt.Sprintf("session:%s:viewed", sessionID)
+
+	// Get all pair IDs from the session's viewed set
+	pairIDs, err := v.client.SMembers(ctx, sessionKey).Result()
+	if err == redis.Nil {
+		// No viewed pairs yet for this session
+		return []string{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get viewed pair IDs: %w", err)
+	}
+
+	return pairIDs, nil
+}
+
+// GetRandomImagePairForSession retrieves a random image pair that the session hasn't viewed yet
+// This combines global exclusion and session-based exclusion for better UX
+func (v *ValkeyClient) GetRandomImagePairForSession(ctx context.Context, sessionID string, excludedPairIDs []string) (*ImagePair, error) {
+	// First, get the pairs this session has already viewed
+	viewedPairIDs, err := v.GetViewedPairIDs(ctx, sessionID)
+	if err != nil {
+		// Log error but continue with just the provided exclusions
+		fmt.Printf("[WARN] Failed to get viewed pairs for session %s: %v\n", sessionID, err)
+		viewedPairIDs = []string{}
+	}
+
+	// Combine both exclusion lists
+	allExcluded := make(map[string]bool)
+	for _, id := range excludedPairIDs {
+		allExcluded[id] = true
+	}
+	for _, id := range viewedPairIDs {
+		allExcluded[id] = true
+	}
+
+	// Convert map back to slice for GetRandomImagePair
+	combined := make([]string, 0, len(allExcluded))
+	for id := range allExcluded {
+		combined = append(combined, id)
+	}
+
+	// Get a random pair using the combined exclusion list
+	pair, err := v.GetRandomImagePair(ctx, combined)
+	if err != nil {
+		return nil, err
+	}
+
+	// Mark this pair as viewed for this session
+	if err := v.MarkImageAsViewed(ctx, sessionID, pair.PairID); err != nil {
+		// Log error but don't fail the request
+		fmt.Printf("[WARN] Failed to mark pair %s as viewed for session %s: %v\n", pair.PairID, sessionID, err)
+	}
+
+	return pair, nil
+}
+
 // GetWinningImages retrieves all images that won their battles for the specified side
 // Returns pairs sorted by vote count (descending)
 // side parameter should be "left" or "right"
