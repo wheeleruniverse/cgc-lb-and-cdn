@@ -848,15 +848,16 @@ CONSOLIDATED="/tmp/cgc-lb-and-cdn-logs-${TIMESTAMP}.log"
 } > "$CONSOLIDATED"
 
 # Upload to Spaces if s3cmd is configured
-if [ -f /root/.s3cfg ] && [ -n "${DO_SPACES_ACCESS_KEY}" ]; then
-  s3cmd put "$CONSOLIDATED" "s3://${DO_SPACES_BUCKET}/logs/${HOSTNAME}/${TIMESTAMP}.log" 2>&1 && \
+if [ -f /root/.s3cfg ]; then
+  # Use the config file explicitly to ensure it's found by cron
+  s3cmd -c /root/.s3cfg put "$CONSOLIDATED" "s3://${DO_SPACES_BUCKET}/logs/${HOSTNAME}/${TIMESTAMP}.log" 2>&1 && \
     echo "✅ Logs uploaded to Spaces: s3://${DO_SPACES_BUCKET}/logs/${HOSTNAME}/${TIMESTAMP}.log" || \
     echo "❌ Failed to upload logs to Spaces"
 
   # Update last upload timestamp
   echo "$CURRENT_TIME" > "$LAST_UPLOAD_FILE"
 else
-  echo "⚠️  Spaces credentials not configured, logs saved locally only at: $CONSOLIDATED"
+  echo "⚠️  Spaces config not found at /root/.s3cfg, logs saved locally only at: $CONSOLIDATED"
 fi
 
 # Cleanup old local log files (keep last 20)
@@ -943,34 +944,35 @@ GENEOF
 
 chmod +x /usr/local/bin/generate-images.sh
 
-# Set up crontab with multiple jobs
-cat > /tmp/crontab.txt << 'CRONEOF'
-# Upload logs every N minutes (configurable via environment)
-*/${LOG_UPLOAD_INTERVAL_MINUTES} * * * * DO_SPACES_BUCKET=${DO_SPACES_BUCKET} DO_SPACES_ACCESS_KEY=${DO_SPACES_ACCESS_KEY} DO_SPACES_SECRET_KEY=${DO_SPACES_SECRET_KEY} /usr/local/bin/upload-logs.sh >> /var/log/cgc-lb-and-cdn-log-upload.log 2>&1
+# Create environment file for cron jobs
+# Cron has minimal environment, so we need to provide necessary variables
+cat > /etc/cron.d/cgc-lb-and-cdn << CRONEOF
+# Environment variables for cron jobs
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+DO_SPACES_BUCKET=${DO_SPACES_BUCKET}
+DO_VALKEY_HOST=${DO_VALKEY_HOST}
+DO_VALKEY_PORT=${DO_VALKEY_PORT}
+DO_VALKEY_PASSWORD=${DO_VALKEY_PASSWORD}
+
+# Upload logs every ${LOG_UPLOAD_INTERVAL_MINUTES} minutes
+*/${LOG_UPLOAD_INTERVAL_MINUTES} * * * * root /usr/local/bin/upload-logs.sh >> /var/log/cgc-lb-and-cdn-log-upload.log 2>&1
 
 # Generate image pairs every 15 minutes to keep database populated
-*/15 * * * * DO_VALKEY_HOST=${DO_VALKEY_HOST} DO_VALKEY_PORT=${DO_VALKEY_PORT} DO_VALKEY_PASSWORD=${DO_VALKEY_PASSWORD} /usr/local/bin/generate-images.sh
+*/15 * * * * root /usr/local/bin/generate-images.sh
 
 # Generate extra images during peak hours (9 AM - 9 PM) every 5 minutes
-*/5 9-21 * * * DO_VALKEY_HOST=${DO_VALKEY_HOST} DO_VALKEY_PORT=${DO_VALKEY_PORT} DO_VALKEY_PASSWORD=${DO_VALKEY_PASSWORD} /usr/local/bin/generate-images.sh
+*/5 9-21 * * * root /usr/local/bin/generate-images.sh
 CRONEOF
 
-# Expand environment variables in crontab
-sed -i "s/\${LOG_UPLOAD_INTERVAL_MINUTES}/${LOG_UPLOAD_INTERVAL_MINUTES}/g" /tmp/crontab.txt
-sed -i "s/\${DO_SPACES_BUCKET}/${DO_SPACES_BUCKET}/g" /tmp/crontab.txt
-sed -i "s/\${DO_SPACES_ACCESS_KEY}/${DO_SPACES_ACCESS_KEY}/g" /tmp/crontab.txt
-sed -i "s/\${DO_SPACES_SECRET_KEY}/${DO_SPACES_SECRET_KEY}/g" /tmp/crontab.txt
-sed -i "s/\${DO_VALKEY_HOST}/${DO_VALKEY_HOST}/g" /tmp/crontab.txt
-sed -i "s/\${DO_VALKEY_PORT}/${DO_VALKEY_PORT}/g" /tmp/crontab.txt
-sed -i "s|\${DO_VALKEY_PASSWORD}|${DO_VALKEY_PASSWORD}|g" /tmp/crontab.txt
+# Set proper permissions on cron file
+chmod 0644 /etc/cron.d/cgc-lb-and-cdn
 
-# Install crontab
-crontab /tmp/crontab.txt
-rm /tmp/crontab.txt
+echo "[$(date)] ✅ Cron jobs configured in /etc/cron.d/cgc-lb-and-cdn"
 
 # Verify cron jobs were set
-echo "[$(date)] Cron jobs configured:"
-crontab -l
+echo "[$(date)] Cron job file contents:"
+cat /etc/cron.d/cgc-lb-and-cdn
 
 # Upload initial logs
 echo "[$(date)] Uploading initial logs..."
