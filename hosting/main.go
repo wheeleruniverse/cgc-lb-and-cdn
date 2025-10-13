@@ -578,10 +578,14 @@ if [ "${RECREATE_VALKEY}" = "true" ]; then
         s3cmd info "s3://${DO_SPACES_BUCKET}/images/${PROVIDER_NAME}/${PAIR_ID}/left.png" > "$METADATA_FILE" 2>&1
 
         # Extract prompt from metadata (stored as x-amz-meta-prompt header)
-        PROMPT=$(grep -i "x-amz-meta-prompt" "$METADATA_FILE" | cut -d: -f2- | xargs)
+        # Use sed to trim whitespace instead of xargs to avoid quote interpretation issues
+        PROMPT=$(grep -i "x-amz-meta-prompt" "$METADATA_FILE" | cut -d: -f2- | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
         if [ -z "$PROMPT" ]; then
           PROMPT="Unknown prompt"
         fi
+
+        # Escape double quotes in prompt for JSON
+        PROMPT=$(echo "$PROMPT" | sed 's/"/\\"/g')
 
         # Store the pair in Valkey using the same format as the backend
         # We'll use redis-cli to store the JSON directly
