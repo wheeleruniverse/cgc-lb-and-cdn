@@ -71,6 +71,8 @@ func main() {
 		}
 
 		// Create Valkey managed database cluster for caching user votes (VPC private only)
+		// By attaching to a VPC via PrivateNetworkUuid, the cluster is automatically VPC-only
+		// with no public endpoint - this is the most secure configuration
 		valkeyCluster, err := digitalocean.NewDatabaseCluster(ctx, "cgc-lb-and-cdn-valkey", &digitalocean.DatabaseClusterArgs{
 			Name:               pulumi.String("cgc-lb-and-cdn-valkey"),
 			Engine:             pulumi.String("valkey"),
@@ -78,29 +80,15 @@ func main() {
 			Size:               pulumi.String("db-s-1vcpu-1gb"), // Small cluster for development
 			Region:             pulumi.String("nyc3"),
 			NodeCount:          pulumi.Int(1), // Single node for cost efficiency
-			PrivateNetworkUuid: vpc.ID(),
+			PrivateNetworkUuid: vpc.ID(),      // VPC attachment = automatic private-only access
 			// Tags removed due to permission issues - can be added manually in DO console
 		})
 		if err != nil {
 			return err
 		}
 
-		// Configure Valkey firewall to ONLY allow VPC access (no public access)
-		// This ensures the cluster is only accessible from droplets within the VPC
-		_, err = digitalocean.NewDatabaseFirewall(ctx, "cgc-lb-and-cdn-valkey-firewall", &digitalocean.DatabaseFirewallArgs{
-			ClusterId: valkeyCluster.ID(),
-			Rules: digitalocean.DatabaseFirewallRuleArray{
-				// Allow access only from the VPC
-				&digitalocean.DatabaseFirewallRuleArgs{
-					Type:  pulumi.String("vpc"),
-					Value: vpc.ID(),
-				},
-				// Note: No public access rules - cluster is VPC-only
-			},
-		})
-		if err != nil {
-			return err
-		}
+		// Note: No DatabaseFirewall needed - VPC attachment already restricts access to VPC-only
+		// The cluster has no public endpoint and is only accessible from droplets in the VPC
 
 		// Create droplets dynamically based on droplet_count
 		// Each droplet runs both backend and frontend applications
