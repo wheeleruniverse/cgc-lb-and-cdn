@@ -74,10 +74,15 @@ export default function ImageBattle() {
     }
   }
 
-  // Spring animation for the main container
-  const [{ x, rotate, scale }, api] = useSpring(() => ({
+  // Spring animations for individual images
+  const [{ x: xLeft, scale: scaleLeft }, apiLeft] = useSpring(() => ({
     x: 0,
-    rotate: 0,
+    scale: 1,
+    config: { tension: 300, friction: 30 }
+  }))
+
+  const [{ x: xRight, scale: scaleRight }, apiRight] = useSpring(() => ({
+    x: 0,
     scale: 1,
     config: { tension: 300, friction: 30 }
   }))
@@ -164,30 +169,68 @@ export default function ImageBattle() {
     }
   }
 
-  // Drag gesture handler
-  const bind = useDrag(
-    ({ down, movement: [mx], direction: [xDir], velocity: [vx] }) => {
-      const trigger = Math.abs(mx) > 50 || Math.abs(vx) > 0.5
-      const side = xDir < 0 ? 'left' : 'right'
+  // Drag gesture handler for LEFT image
+  const bindLeft = useDrag(
+    ({ down, movement: [mx], velocity: [vx], tap }) => {
+      if (isVoting) return
 
-      if (!down && trigger && !isVoting) {
-        // Trigger vote
-        submitVote(side)
-        api.start({ x: xDir < 0 ? -200 : 200, rotate: xDir * 15, scale: 0.9 })
+      // If it's a tap/click, vote immediately
+      if (tap) {
+        submitVote('left')
+        return
+      }
+
+      const trigger = Math.abs(mx) > 80 || Math.abs(vx) > 0.5
+
+      if (!down && trigger) {
+        // Vote for left when dragging left image
+        submitVote('left')
+        apiLeft.start({ x: -200, scale: 1.1 })
         setTimeout(() => {
-          api.start({ x: 0, rotate: 0, scale: 1 })
+          apiLeft.start({ x: 0, scale: 1 })
         }, 300)
       } else {
         // Follow drag
-        api.start({
+        apiLeft.start({
           x: down ? mx : 0,
-          rotate: down ? mx * 0.1 : 0,
           scale: down ? 1.05 : 1,
           immediate: down
         })
       }
     },
-    { axis: 'x', preventScroll: true }
+    { axis: 'x', preventScroll: true, filterTaps: true }
+  )
+
+  // Drag gesture handler for RIGHT image
+  const bindRight = useDrag(
+    ({ down, movement: [mx], velocity: [vx], tap }) => {
+      if (isVoting) return
+
+      // If it's a tap/click, vote immediately
+      if (tap) {
+        submitVote('right')
+        return
+      }
+
+      const trigger = Math.abs(mx) > 80 || Math.abs(vx) > 0.5
+
+      if (!down && trigger) {
+        // Vote for right when dragging right image
+        submitVote('right')
+        apiRight.start({ x: 200, scale: 1.1 })
+        setTimeout(() => {
+          apiRight.start({ x: 0, scale: 1 })
+        }, 300)
+      } else {
+        // Follow drag
+        apiRight.start({
+          x: down ? mx : 0,
+          scale: down ? 1.05 : 1,
+          immediate: down
+        })
+      }
+    },
+    { axis: 'x', preventScroll: true, filterTaps: true }
   )
 
   useEffect(() => {
@@ -338,7 +381,7 @@ export default function ImageBattle() {
       >
         <div className="text-center mb-6">
           <h1 className="text-3xl font-bold text-white mb-2">AI Image Battle</h1>
-          <p className="text-purple-200 text-sm">Swipe left or right to vote!</p>
+          <p className="text-purple-200 text-sm">Click your favorite image!</p>
         </div>
 
         {/* Team Scores with Vertical Divider */}
@@ -396,15 +439,15 @@ export default function ImageBattle() {
             </div>
           </motion.div>
 
-          <animated.div
-            {...bind()}
-            style={{ x, rotate, scale }}
-            className="touch-none cursor-grab active:cursor-grabbing"
-          >
-            <div className="grid grid-cols-2 gap-4 h-[60vh] relative">
-              {/* Left Image */}
+          <div className="grid grid-cols-2 gap-4 h-[60vh] relative">
+            {/* Left Image */}
+            <animated.div
+              {...bindLeft()}
+              style={{ x: xLeft, scale: scaleLeft }}
+              className="touch-none cursor-pointer hover:cursor-grab active:cursor-grabbing"
+            >
               <motion.div
-                className={`relative rounded-xl overflow-hidden shadow-2xl ${
+                className={`relative rounded-xl overflow-hidden shadow-2xl h-full ${
                   showWinnerEffect === 'left' ? 'ring-4 ring-green-400' : ''
                 } ${
                   keyboardHighlight === 'left' ? 'ring-4 ring-blue-400 ring-opacity-75' : ''
@@ -425,7 +468,7 @@ export default function ImageBattle() {
                 <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
                 <div className="absolute bottom-4 left-4 text-white">
                   <div className="text-sm font-medium">{imagePair.provider}</div>
-                  <div className="text-xs opacity-75">Tap or swipe left</div>
+                  <div className="text-xs opacity-75">Click to vote</div>
                 </div>
 
                 {showWinnerEffect === 'left' && (
@@ -440,10 +483,16 @@ export default function ImageBattle() {
                   </motion.div>
                 )}
               </motion.div>
+            </animated.div>
 
-              {/* Right Image */}
+            {/* Right Image */}
+            <animated.div
+              {...bindRight()}
+              style={{ x: xRight, scale: scaleRight }}
+              className="touch-none cursor-pointer hover:cursor-grab active:cursor-grabbing"
+            >
               <motion.div
-                className={`relative rounded-xl overflow-hidden shadow-2xl ${
+                className={`relative rounded-xl overflow-hidden shadow-2xl h-full ${
                   showWinnerEffect === 'right' ? 'ring-4 ring-green-400' : ''
                 } ${
                   keyboardHighlight === 'right' ? 'ring-4 ring-blue-400 ring-opacity-75' : ''
@@ -464,7 +513,7 @@ export default function ImageBattle() {
                 <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
                 <div className="absolute bottom-4 right-4 text-white text-right">
                   <div className="text-sm font-medium">{imagePair.provider}</div>
-                  <div className="text-xs opacity-75">Tap or swipe right</div>
+                  <div className="text-xs opacity-75">Click to vote</div>
                 </div>
 
                 {showWinnerEffect === 'right' && (
@@ -479,56 +528,30 @@ export default function ImageBattle() {
                   </motion.div>
                 )}
               </motion.div>
-
-            </div>
-          </animated.div>
-
-
-          {/* Mobile tap buttons */}
-          <div className="grid grid-cols-2 gap-4 mt-6 md:hidden">
-            <button
-              onClick={() => submitVote('left')}
-              disabled={isVoting}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white py-4 rounded-xl font-semibold text-lg transition-all transform hover:scale-105 active:scale-95"
-            >
-              Choose Left
-            </button>
-            <button
-              onClick={() => submitVote('right')}
-              disabled={isVoting}
-              className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white py-4 rounded-xl font-semibold text-lg transition-all transform hover:scale-105 active:scale-95"
-            >
-              Choose Right
-            </button>
+            </animated.div>
           </div>
+
+
         </motion.div>
 
-        {/* Desktop and mobile instructions */}
+        {/* Instructions */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 1 }}
           className="mt-8 text-center"
         >
-          {/* Mobile instructions */}
-          <div className="flex justify-between px-8 text-white/60 text-sm md:hidden">
-            <div className="flex items-center">
-              <span className="mr-2">←</span> Swipe left
+          <div className="flex flex-wrap justify-center items-center gap-4 text-white/60 text-sm">
+            <div className="flex items-center bg-white/10 px-4 py-2 rounded-lg">
+              <span>👆 Click or drag an image to vote for it</span>
             </div>
-            <div className="flex items-center">
-              Swipe right <span className="ml-2">→</span>
-            </div>
-          </div>
-
-          {/* Desktop instructions */}
-          <div className="hidden md:flex justify-center items-center space-x-6 text-white/60 text-sm">
-            <div className="flex items-center bg-white/10 px-3 py-2 rounded-lg">
+            <div className="hidden md:flex items-center bg-white/10 px-3 py-2 rounded-lg">
               <kbd className="bg-white/20 px-2 py-1 rounded text-xs mr-2">←</kbd>
-              <span>Left Arrow = Vote Left</span>
+              <span>Vote Left</span>
             </div>
-            <div className="flex items-center bg-white/10 px-3 py-2 rounded-lg">
+            <div className="hidden md:flex items-center bg-white/10 px-3 py-2 rounded-lg">
               <kbd className="bg-white/20 px-2 py-1 rounded text-xs mr-2">→</kbd>
-              <span>Right Arrow = Vote Right</span>
+              <span>Vote Right</span>
             </div>
           </div>
         </motion.div>
