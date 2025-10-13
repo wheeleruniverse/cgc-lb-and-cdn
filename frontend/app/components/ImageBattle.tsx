@@ -14,6 +14,14 @@ interface ImagePair {
   right_url: string
 }
 
+// Generate a random session ID for anonymous user tracking
+function generateSessionId(): string {
+  // Create a unique session ID using timestamp + random values
+  const timestamp = Date.now().toString(36)
+  const randomPart = Math.random().toString(36).substring(2, 15)
+  return `sess_${timestamp}_${randomPart}`
+}
+
 export default function ImageBattle() {
   const [imagePair, setImagePair] = useState<ImagePair | null>(null)
   const [loading, setLoading] = useState(true)
@@ -31,6 +39,22 @@ export default function ImageBattle() {
     return []
   })
   const [showWinnersGrid, setShowWinnersGrid] = useState<'left' | 'right' | null>(null)
+
+  // Session ID for tracking anonymous users
+  const [sessionId] = useState<string>(() => {
+    // Load or create session ID from localStorage
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('sessionId')
+      if (stored) {
+        return stored
+      }
+      // Generate new session ID
+      const newSessionId = generateSessionId()
+      localStorage.setItem('sessionId', newSessionId)
+      return newSessionId
+    }
+    return generateSessionId()
+  })
 
   // Fetch team scores from backend
   const fetchTeamScores = async () => {
@@ -63,11 +87,19 @@ export default function ImageBattle() {
       setLoading(true)
       setError(null)
 
-      // Build URL with excluded pair IDs
+      // Build URL with session ID and excluded pair IDs
       let url = '/api/v1/images/pair'
+      const params = new URLSearchParams()
+
+      // Add session ID for session-based tracking
+      params.append('session_id', sessionId)
+
+      // Add excluded pair IDs (for backwards compatibility and extra filtering)
       if (votedPairIds.length > 0) {
-        url += `?exclude=${votedPairIds.join(',')}`
+        params.append('exclude', votedPairIds.join(','))
       }
+
+      url += `?${params.toString()}`
 
       const response = await fetch(url)
 
