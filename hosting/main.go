@@ -438,6 +438,33 @@ secret_key = ${DO_SPACES_SECRET_KEY}
 use_https = True
 S3CFG
 
+# Configure lifecycle policy to automatically delete old logs after 7 days
+echo "[$(date)] Configuring lifecycle policy for automatic log cleanup..."
+cat > /tmp/lifecycle-policy.xml << 'LIFECYCLE'
+<?xml version="1.0" encoding="UTF-8"?>
+<LifecycleConfiguration>
+    <Rule>
+        <ID>delete-old-logs</ID>
+        <Status>Enabled</Status>
+        <Filter>
+            <Prefix>logs/</Prefix>
+        </Filter>
+        <Expiration>
+            <Days>7</Days>
+        </Expiration>
+    </Rule>
+</LifecycleConfiguration>
+LIFECYCLE
+
+# Apply lifecycle policy (only run on first droplet to avoid conflicts)
+HOSTNAME=$(hostname)
+if [[ "$HOSTNAME" =~ -1$ ]]; then
+  s3cmd -c /root/.s3cfg setlifecycle /tmp/lifecycle-policy.xml s3://${DO_SPACES_BUCKET} 2>&1 && \
+    echo "[$(date)] ✅ Lifecycle policy applied - logs will auto-delete after 7 days" || \
+    echo "[$(date)] ⚠️  Failed to apply lifecycle policy (may already exist)"
+fi
+rm -f /tmp/lifecycle-policy.xml
+
 # Install Go 1.23
 cd /tmp
 wget https://go.dev/dl/go1.23.2.linux-amd64.tar.gz
