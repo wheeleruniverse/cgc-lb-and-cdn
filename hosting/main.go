@@ -422,6 +422,11 @@ apt-get upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--fo
 echo "[$(date)] Installing required packages..."
 apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" curl wget git build-essential nginx s3cmd redis-tools
 
+# Install DigitalOcean Metrics Agent for monitoring
+echo "[$(date)] Installing DigitalOcean Metrics Agent..."
+curl -sSL https://repos.insights.digitalocean.com/install.sh | bash
+echo "[$(date)] ✅ Metrics agent installed - dashboard metrics now available"
+
 # Configure s3cmd for DigitalOcean Spaces
 echo "[$(date)] Configuring S3 access for Spaces..."
 cat > /root/.s3cfg << S3CFG
