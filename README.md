@@ -96,11 +96,13 @@ Explore individual AI image generation providers and their capabilities:
 
 ## 💰 Cost Estimation
 
-**Digital Ocean Monthly Costs (~$44/month):**
+**Digital Ocean Monthly Costs (~$68/month):**
 - Load Balancer: $12/month
-- 2 Droplets (1vCPU/1GB): $12/month
+- 2 Droplets (2vCPU/2GB): $36/month
 - Spaces Storage + CDN: $5/month
 - Valkey Database: $15/month
+
+**Note**: The 2 vCPU / 2GB droplet configuration is required to handle full-stack deployment (backend Go API, frontend Next.js, nginx reverse proxy, and UserData bootstrapping). Smaller instances were insufficient during initial testing.
 
 **AI Generation Costs:**
 - Leverages free tiers across multiple providers

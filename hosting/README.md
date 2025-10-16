@@ -109,10 +109,11 @@ If you have a custom domain:
 - **SSL**: Ready for SSL certificate (update certificate ID)
 
 ### Droplets
-- **Size**: s-2vcpu-2gb (2 CPU, 2GB RAM)
+- **Size**: s-2vcpu-2gb (2 vCPU, 2GB RAM)
 - **Image**: Ubuntu 22.04 LTS
 - **Network**: Private VPC with public IP
-- **Storage**: 50GB SSD
+- **Storage**: 60GB SSD
+- **Note**: The 2 vCPU / 2GB configuration is required to handle UserData script execution while simultaneously serving backend, frontend, and nginx. Smaller instances (s-1vcpu-1gb) were insufficient during testing.
 
 ### DO Spaces Storage
 - **Name**: cgc-lb-and-cdn-content
@@ -155,10 +156,12 @@ To scale the infrastructure:
 
 Monthly costs (approximate):
 - Load Balancer: $12/month
-- 2 Droplets (s-1vcpu-1gb): $12/month ($6 each)
+- 2 Droplets (s-2vcpu-2gb): $36/month ($18 each)
 - Spaces Storage (250GB): $5/month
 - Valkey Database (db-s-1vcpu-1gb): $15/month
-- **Total**: ~$44/month
+- **Total**: ~$68/month
+
+**Note**: The s-2vcpu-2gb droplet size is required to handle the full-stack deployment (backend, frontend, nginx, and UserData bootstrapping). Initial testing with s-1vcpu-1gb droplets proved insufficient for concurrent workload execution.
 
 ## Cleanup
 
