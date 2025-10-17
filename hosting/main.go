@@ -806,6 +806,11 @@ cat > /usr/local/bin/upload-logs.sh << 'UPLOADEOF'
 #!/bin/bash
 set -e
 
+# Source environment variables for cron
+if [ -f /var/lib/cgc-lb-and-cdn-service/.env-cron ]; then
+  source /var/lib/cgc-lb-and-cdn-service/.env-cron
+fi
+
 HOSTNAME=$(hostname)
 TIMESTAMP=$(date +%%Y%%m%%d-%%H%%M%%S)
 LOGFILE="/var/log/cgc-lb-and-cdn-deployment.log"
@@ -924,6 +929,11 @@ cat > /usr/local/bin/generate-images.sh << 'GENEOF'
 #   2. No duplicate pairs are created
 #   3. Valkey isn't overwhelmed with concurrent writes
 
+# Source environment variables for cron
+if [ -f /var/lib/cgc-lb-and-cdn-service/.env-cron ]; then
+  source /var/lib/cgc-lb-and-cdn-service/.env-cron
+fi
+
 LOGFILE="/var/log/cgc-lb-and-cdn-image-generation.log"
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 LOCK_KEY="image-generation-lock"
@@ -987,16 +997,21 @@ GENEOF
 
 chmod +x /usr/local/bin/generate-images.sh
 
-# Create environment file for cron jobs
-# Cron has minimal environment, so we need to provide necessary variables
+# Create environment file that scripts can source
+cat > /var/lib/cgc-lb-and-cdn-service/.env-cron << ENVEOF
+export DO_SPACES_BUCKET="${DO_SPACES_BUCKET}"
+export DO_VALKEY_HOST="${DO_VALKEY_HOST}"
+export DO_VALKEY_PORT="${DO_VALKEY_PORT}"
+export DO_VALKEY_PASSWORD="${DO_VALKEY_PASSWORD}"
+ENVEOF
+chown cgc-lb-and-cdn-service:cgc-lb-and-cdn-service /var/lib/cgc-lb-and-cdn-service/.env-cron
+chmod 600 /var/lib/cgc-lb-and-cdn-service/.env-cron
+
+# Create cron job file
 cat > /etc/cron.d/cgc-lb-and-cdn << CRONEOF
-# Environment variables for cron jobs
+# Cron jobs for cgc-lb-and-cdn service
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-DO_SPACES_BUCKET=${DO_SPACES_BUCKET}
-DO_VALKEY_HOST=${DO_VALKEY_HOST}
-DO_VALKEY_PORT=${DO_VALKEY_PORT}
-DO_VALKEY_PASSWORD=${DO_VALKEY_PASSWORD}
 
 # Upload logs every ${LOG_UPLOAD_INTERVAL_MINUTES} minutes
 */${LOG_UPLOAD_INTERVAL_MINUTES} * * * * cgc-lb-and-cdn-service /usr/local/bin/upload-logs.sh >> /var/log/cgc-lb-and-cdn-log-upload.log 2>&1
@@ -1017,9 +1032,13 @@ echo "[$(date)] ✅ Cron jobs configured in /etc/cron.d/cgc-lb-and-cdn"
 echo "[$(date)] Cron job file contents:"
 cat /etc/cron.d/cgc-lb-and-cdn
 
-# Upload initial logs
+# Set proper ownership for log files so service user can access them
+chown cgc-lb-and-cdn-service:cgc-lb-and-cdn-service /var/log/cgc-lb-and-cdn-deployment.log
+chmod 644 /var/log/cgc-lb-and-cdn-deployment.log
+
+# Upload initial logs as the service user
 echo "[$(date)] Uploading initial logs..."
-/usr/local/bin/upload-logs.sh
+su - cgc-lb-and-cdn-service -c "/usr/local/bin/upload-logs.sh"
 
 # ===================
 # DEPLOYMENT COMPLETE
