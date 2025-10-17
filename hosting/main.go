@@ -821,6 +821,9 @@ else
   TIME_SINCE_UPLOAD=0
 fi
 
+# Set PM2_HOME for the service user
+export PM2_HOME="/var/lib/cgc-lb-and-cdn-service/.pm2"
+
 # Create a consolidated log file
 CONSOLIDATED="/tmp/cgc-lb-and-cdn-logs-${TIMESTAMP}.log"
 {
@@ -829,6 +832,7 @@ CONSOLIDATED="/tmp/cgc-lb-and-cdn-logs-${TIMESTAMP}.log"
   echo "Hostname: $HOSTNAME"
   echo "Timestamp: $(date)"
   echo "Time since last upload: ${TIME_SINCE_UPLOAD} seconds"
+  echo "Running as user: $(whoami)"
   echo "================================"
   echo ""
 
@@ -853,11 +857,11 @@ CONSOLIDATED="/tmp/cgc-lb-and-cdn-logs-${TIMESTAMP}.log"
   echo ""
 
   echo "=== PM2 Status ==="
-  su - cgc-lb-and-cdn-service -c "pm2 list" 2>/dev/null || echo "PM2 not running"
+  pm2 list 2>/dev/null || echo "PM2 not running"
   echo ""
 
   echo "=== PM2 Logs (Last 100 lines) ==="
-  su - cgc-lb-and-cdn-service -c "pm2 logs --nostream --lines 100" 2>/dev/null || echo "No PM2 logs available"
+  pm2 logs --nostream --lines 100 2>/dev/null || echo "No PM2 logs available"
   echo ""
 
   echo "=== Nginx Error Log (Last 50 lines) ==="
@@ -886,16 +890,17 @@ CONSOLIDATED="/tmp/cgc-lb-and-cdn-logs-${TIMESTAMP}.log"
 } > "$CONSOLIDATED"
 
 # Upload to Spaces if s3cmd is configured
-if [ -f /var/lib/cgc-lb-and-cdn-service/.s3cfg ]; then
+S3CFG_PATH="/var/lib/cgc-lb-and-cdn-service/.s3cfg"
+if [ -f "$S3CFG_PATH" ]; then
   # Use the config file explicitly to ensure it's found by cron
-  s3cmd -c /var/lib/cgc-lb-and-cdn-service/.s3cfg put "$CONSOLIDATED" "s3://${DO_SPACES_BUCKET}/logs/${HOSTNAME}/${TIMESTAMP}.log" 2>&1 && \
+  s3cmd -c "$S3CFG_PATH" put "$CONSOLIDATED" "s3://${DO_SPACES_BUCKET}/logs/${HOSTNAME}/${TIMESTAMP}.log" 2>&1 && \
     echo "✅ Logs uploaded to Spaces: s3://${DO_SPACES_BUCKET}/logs/${HOSTNAME}/${TIMESTAMP}.log" || \
     echo "❌ Failed to upload logs to Spaces"
 
   # Update last upload timestamp
   echo "$CURRENT_TIME" > "$LAST_UPLOAD_FILE"
 else
-  echo "⚠️  Spaces config not found at /var/lib/cgc-lb-and-cdn-service/.s3cfg, logs saved locally only at: $CONSOLIDATED"
+  echo "⚠️  Spaces config not found at $S3CFG_PATH, logs saved locally only at: $CONSOLIDATED"
 fi
 
 # Cleanup old local log files (keep last 20)
