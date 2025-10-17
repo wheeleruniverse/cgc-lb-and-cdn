@@ -427,9 +427,14 @@ echo "[$(date)] Installing DigitalOcean Metrics Agent..."
 curl -sSL https://repos.insights.digitalocean.com/install.sh | bash
 echo "[$(date)] ✅ Metrics agent installed - dashboard metrics now available"
 
-# Configure s3cmd for DigitalOcean Spaces
+# Create dedicated service user for running all services (don't use root!)
+echo "[$(date)] Creating dedicated service user..."
+useradd -r -s /bin/bash -d /var/lib/cgc-lb-and-cdn-service -m cgc-lb-and-cdn-service
+echo "[$(date)] ✅ Service user 'cgc-lb-and-cdn-service' created"
+
+# Configure s3cmd for DigitalOcean Spaces (for the service user)
 echo "[$(date)] Configuring S3 access for Spaces..."
-cat > /root/.s3cfg << S3CFG
+cat > /var/lib/cgc-lb-and-cdn-service/.s3cfg << S3CFG
 [default]
 host_base = ${DO_SPACES_ENDPOINT}
 host_bucket = %%(bucket)s.${DO_SPACES_ENDPOINT}
@@ -459,7 +464,7 @@ LIFECYCLE
 # Apply lifecycle policy (only run on first droplet to avoid conflicts)
 HOSTNAME=$(hostname)
 if [[ "$HOSTNAME" =~ -1$ ]]; then
-  s3cmd -c /root/.s3cfg setlifecycle /tmp/lifecycle-policy.xml s3://${DO_SPACES_BUCKET} 2>&1 && \
+  s3cmd -c /var/lib/cgc-lb-and-cdn-service/.s3cfg setlifecycle /tmp/lifecycle-policy.xml s3://${DO_SPACES_BUCKET} 2>&1 && \
     echo "[$(date)] ✅ Lifecycle policy applied - logs will auto-delete after 7 days" || \
     echo "[$(date)] ⚠️  Failed to apply lifecycle policy (may already exist)"
 fi
@@ -513,7 +518,8 @@ After=network.target
 
 [Service]
 Type=simple
-User=root
+User=cgc-lb-and-cdn-service
+Group=cgc-lb-and-cdn-service
 WorkingDirectory=/opt/cgc-lb-and-cdn-backend
 Environment=PATH=/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 EnvironmentFile=/opt/cgc-lb-and-cdn-backend/.env
@@ -534,6 +540,9 @@ cd /opt/cgc-lb-and-cdn-backend
 git clone https://github.com/wheeleruniverse/cgc-lb-and-cdn.git repo
 cp -r repo/backend/* .
 rm -rf repo
+
+# Set ownership of backend directory to service user
+chown -R cgc-lb-and-cdn-service:cgc-lb-and-cdn-service /opt/cgc-lb-and-cdn-backend
 
 # Verify environment variables are set
 echo "[$(date)] Verifying environment variables..."
@@ -740,21 +749,23 @@ git clone https://github.com/wheeleruniverse/cgc-lb-and-cdn.git repo
 cp -r repo/frontend/* .
 rm -rf repo
 
-# Build and start frontend
+# Set ownership of frontend directory to service user
+chown -R cgc-lb-and-cdn-service:cgc-lb-and-cdn-service /opt/cgc-lb-and-cdn-frontend
+
+# Build and start frontend as service user
 echo "[$(date)] Building frontend application..."
-npm install
-npm run build
+su - cgc-lb-and-cdn-service -c "cd /opt/cgc-lb-and-cdn-frontend && npm install && npm run build"
 
 echo "[$(date)] Starting frontend with PM2..."
-pm2 start ecosystem.config.js
+su - cgc-lb-and-cdn-service -c "cd /opt/cgc-lb-and-cdn-frontend && pm2 start ecosystem.config.js"
 
-# Configure PM2 to start on boot
-pm2 save
-env PATH=$PATH:/usr/bin /usr/bin/pm2 startup systemd -u root --hp /root
+# Configure PM2 to start on boot for service user
+su - cgc-lb-and-cdn-service -c "pm2 save"
+env PATH=$PATH:/usr/bin /usr/bin/pm2 startup systemd -u cgc-lb-and-cdn-service --hp /var/lib/cgc-lb-and-cdn-service
 
 # Check PM2 status
 echo "[$(date)] Checking PM2 status..."
-pm2 list
+su - cgc-lb-and-cdn-service -c "pm2 list"
 
 # Diagnostic checks
 echo "[$(date)] Running diagnostic checks..."
@@ -780,7 +791,7 @@ journalctl -u cgc-lb-and-cdn-backend.service -n 20 --no-pager || true
 
 echo ""
 echo "=== Frontend logs (last 20 lines) ==="
-pm2 logs cgc-lb-and-cdn-frontend --lines 20 --nostream || true
+su - cgc-lb-and-cdn-service -c "pm2 logs cgc-lb-and-cdn-frontend --lines 20 --nostream" || true
 
 echo ""
 echo "=== Nginx error log (last 20 lines) ==="
@@ -842,11 +853,11 @@ CONSOLIDATED="/tmp/cgc-lb-and-cdn-logs-${TIMESTAMP}.log"
   echo ""
 
   echo "=== PM2 Status ==="
-  pm2 list 2>/dev/null || echo "PM2 not running"
+  su - cgc-lb-and-cdn-service -c "pm2 list" 2>/dev/null || echo "PM2 not running"
   echo ""
 
   echo "=== PM2 Logs (Last 100 lines) ==="
-  pm2 logs --nostream --lines 100 2>/dev/null || echo "No PM2 logs available"
+  su - cgc-lb-and-cdn-service -c "pm2 logs --nostream --lines 100" 2>/dev/null || echo "No PM2 logs available"
   echo ""
 
   echo "=== Nginx Error Log (Last 50 lines) ==="
@@ -875,16 +886,16 @@ CONSOLIDATED="/tmp/cgc-lb-and-cdn-logs-${TIMESTAMP}.log"
 } > "$CONSOLIDATED"
 
 # Upload to Spaces if s3cmd is configured
-if [ -f /root/.s3cfg ]; then
+if [ -f /var/lib/cgc-lb-and-cdn-service/.s3cfg ]; then
   # Use the config file explicitly to ensure it's found by cron
-  s3cmd -c /root/.s3cfg put "$CONSOLIDATED" "s3://${DO_SPACES_BUCKET}/logs/${HOSTNAME}/${TIMESTAMP}.log" 2>&1 && \
+  s3cmd -c /var/lib/cgc-lb-and-cdn-service/.s3cfg put "$CONSOLIDATED" "s3://${DO_SPACES_BUCKET}/logs/${HOSTNAME}/${TIMESTAMP}.log" 2>&1 && \
     echo "✅ Logs uploaded to Spaces: s3://${DO_SPACES_BUCKET}/logs/${HOSTNAME}/${TIMESTAMP}.log" || \
     echo "❌ Failed to upload logs to Spaces"
 
   # Update last upload timestamp
   echo "$CURRENT_TIME" > "$LAST_UPLOAD_FILE"
 else
-  echo "⚠️  Spaces config not found at /root/.s3cfg, logs saved locally only at: $CONSOLIDATED"
+  echo "⚠️  Spaces config not found at /var/lib/cgc-lb-and-cdn-service/.s3cfg, logs saved locally only at: $CONSOLIDATED"
 fi
 
 # Cleanup old local log files (keep last 20)
@@ -983,13 +994,13 @@ DO_VALKEY_PORT=${DO_VALKEY_PORT}
 DO_VALKEY_PASSWORD=${DO_VALKEY_PASSWORD}
 
 # Upload logs every ${LOG_UPLOAD_INTERVAL_MINUTES} minutes
-*/${LOG_UPLOAD_INTERVAL_MINUTES} * * * * root /usr/local/bin/upload-logs.sh >> /var/log/cgc-lb-and-cdn-log-upload.log 2>&1
+*/${LOG_UPLOAD_INTERVAL_MINUTES} * * * * cgc-lb-and-cdn-service /usr/local/bin/upload-logs.sh >> /var/log/cgc-lb-and-cdn-log-upload.log 2>&1
 
 # Generate image pairs every 15 minutes to keep database populated
-*/15 * * * * root /usr/local/bin/generate-images.sh
+*/15 * * * * cgc-lb-and-cdn-service /usr/local/bin/generate-images.sh
 
 # Generate extra images during peak hours (9 AM - 9 PM) every 5 minutes
-*/5 9-21 * * * root /usr/local/bin/generate-images.sh
+*/5 9-21 * * * cgc-lb-and-cdn-service /usr/local/bin/generate-images.sh
 CRONEOF
 
 # Set proper permissions on cron file
