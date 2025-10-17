@@ -1,6 +1,6 @@
 name: cgc-lb-and-cdn
 runtime: go
-description: Digital Ocean infrastructure for CGC Load Balancing and CDN project
+description: Digital Ocean infrastructure
 
 config:
   cgc-lb-and-cdn:domain:
