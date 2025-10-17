@@ -692,7 +692,7 @@ server {
 
     # Proxy health check to backend
     location /health {
-        proxy_pass http://localhost:8080;
+        proxy_pass http://localhost:8080/health;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -1035,6 +1035,16 @@ cat /etc/cron.d/cgc-lb-and-cdn
 # Set proper ownership for log files so service user can access them
 chown cgc-lb-and-cdn-service:cgc-lb-and-cdn-service /var/log/cgc-lb-and-cdn-deployment.log
 chmod 644 /var/log/cgc-lb-and-cdn-deployment.log
+
+# Create log upload tracking file with proper ownership
+touch /var/log/cgc-lb-and-cdn-last-upload.txt
+chown cgc-lb-and-cdn-service:cgc-lb-and-cdn-service /var/log/cgc-lb-and-cdn-last-upload.txt
+chmod 644 /var/log/cgc-lb-and-cdn-last-upload.txt
+
+# Create log upload log file with proper ownership
+touch /var/log/cgc-lb-and-cdn-log-upload.log
+chown cgc-lb-and-cdn-service:cgc-lb-and-cdn-service /var/log/cgc-lb-and-cdn-log-upload.log
+chmod 644 /var/log/cgc-lb-and-cdn-log-upload.log
 
 # Upload initial logs as the service user
 echo "[$(date)] Uploading initial logs..."
