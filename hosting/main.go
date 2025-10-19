@@ -409,8 +409,8 @@ echo "================================"
 # Set non-interactive mode for all apt operations
 export DEBIAN_FRONTEND=noninteractive
 
-# Set log upload interval (in minutes) - default to 5 for testing, can be changed via env
-LOG_UPLOAD_INTERVAL_MINUTES="${LOG_UPLOAD_INTERVAL_MINUTES:-5}"
+# Set log upload interval (in minutes) - default to 60 for maintenance mode
+LOG_UPLOAD_INTERVAL_MINUTES="${LOG_UPLOAD_INTERVAL_MINUTES:-60}"
 echo "[$(date)] Log upload interval set to: ${LOG_UPLOAD_INTERVAL_MINUTES} minutes"
 
 # Update system
@@ -894,19 +894,35 @@ CONSOLIDATED="/tmp/cgc-lb-and-cdn-logs-${TIMESTAMP}.log"
   echo "================================"
 } > "$CONSOLIDATED"
 
+# Compress the log file with gzip
+COMPRESSED="${CONSOLIDATED}.gz"
+gzip -c "$CONSOLIDATED" > "$COMPRESSED" 2>&1 && \
+  echo "✅ Logs compressed: $(du -h "$COMPRESSED" | cut -f1) (from $(du -h "$CONSOLIDATED" | cut -f1))" || \
+  echo "⚠️  Failed to compress logs, uploading uncompressed"
+
 # Upload to Spaces if s3cmd is configured
 S3CFG_PATH="/var/lib/cgc-lb-and-cdn-service/.s3cfg"
 if [ -f "$S3CFG_PATH" ]; then
   # Use the config file explicitly to ensure it's found by cron
-  s3cmd -c "$S3CFG_PATH" put "$CONSOLIDATED" "s3://${DO_SPACES_BUCKET}/logs/${HOSTNAME}/${TIMESTAMP}.log" 2>&1 && \
-    echo "✅ Logs uploaded to Spaces: s3://${DO_SPACES_BUCKET}/logs/${HOSTNAME}/${TIMESTAMP}.log" || \
-    echo "❌ Failed to upload logs to Spaces"
+  # Upload compressed version if available, otherwise upload uncompressed
+  if [ -f "$COMPRESSED" ]; then
+    s3cmd -c "$S3CFG_PATH" put "$COMPRESSED" "s3://${DO_SPACES_BUCKET}/logs/${HOSTNAME}/${TIMESTAMP}.log.gz" 2>&1 && \
+      echo "✅ Compressed logs uploaded to Spaces: s3://${DO_SPACES_BUCKET}/logs/${HOSTNAME}/${TIMESTAMP}.log.gz" || \
+      echo "❌ Failed to upload compressed logs to Spaces"
+  else
+    s3cmd -c "$S3CFG_PATH" put "$CONSOLIDATED" "s3://${DO_SPACES_BUCKET}/logs/${HOSTNAME}/${TIMESTAMP}.log" 2>&1 && \
+      echo "✅ Logs uploaded to Spaces: s3://${DO_SPACES_BUCKET}/logs/${HOSTNAME}/${TIMESTAMP}.log" || \
+      echo "❌ Failed to upload logs to Spaces"
+  fi
 
   # Update last upload timestamp
   echo "$CURRENT_TIME" > "$LAST_UPLOAD_FILE"
 else
   echo "⚠️  Spaces config not found at $S3CFG_PATH, logs saved locally only at: $CONSOLIDATED"
 fi
+
+# Cleanup compressed file
+rm -f "$COMPRESSED"
 
 # Cleanup old local log files (keep last 20)
 find /tmp -name "cgc-lb-and-cdn-logs-*.log" -mtime +1 -delete 2>/dev/null || true
