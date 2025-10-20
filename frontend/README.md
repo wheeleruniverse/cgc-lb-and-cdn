@@ -44,6 +44,8 @@ The frontend connects to the backend API:
 
 - `GET /api/v1/images/pair` - Fetch random image pairs
 - `POST /api/v1/images/rate` - Submit comparison votes
+- `GET /api/v1/images/winners?side=left` - Get winning images (available but not currently used)
+- `GET /api/v1/statistics` - Get voting statistics (available but not currently used)
 
 ## Mobile Experience
 

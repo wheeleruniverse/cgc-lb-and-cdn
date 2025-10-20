@@ -8,8 +8,8 @@ A Go-based image generation service using Google Agent Development Kit (ADK) for
 - **Automatic Fallback**: Switches between providers when quotas or rate limits are hit
 - **Random Load Balancing**: Treats all providers equally until errors occur
 - **DigitalOcean Spaces CDN**: All images served from CDN (no local storage)
-- **Valkey Vote Persistence**: Redis-compatible caching for user votes and leaderboards
-- **Real-time Leaderboard**: Track provider performance with win rates and statistics
+- **Valkey Vote Persistence**: Redis-compatible caching for user votes and statistics
+- **Provider Statistics**: Track provider performance with win rates and vote counts
 - **RESTful API**: Clean endpoints with JSON responses
 - **Health Monitoring**: Provider status tracking and health endpoints
 
@@ -141,29 +141,6 @@ POST /api/v1/images/rate
 }
 ```
 
-### Get Leaderboard
-```bash
-GET /api/v1/leaderboard
-```
-
-**Response:**
-```json
-{
-  "data": {
-    "leaderboard": [
-      {
-        "provider": "freepik",
-        "wins": 150,
-        "losses": 50,
-        "total_votes": 200,
-        "win_rate": 75.0
-      }
-    ],
-    "timestamp": "2025-10-06T12:00:00Z"
-  }
-}
-```
-
 ### Get Statistics
 ```bash
 GET /api/v1/statistics
@@ -173,16 +150,40 @@ GET /api/v1/statistics
 ```json
 {
   "data": {
-    "providers": {
-      "freepik": {
-        "provider": "freepik",
-        "wins": 150,
-        "losses": 50,
-        "total_votes": 200,
-        "win_rate": 75.0
-      }
-    },
     "total_votes": 500,
+    "side_wins": {
+      "left": 275,
+      "right": 225
+    },
+    "timestamp": "2025-10-06T12:00:00Z"
+  }
+}
+```
+
+### Get Winners
+```bash
+GET /api/v1/images/winners?side=left
+```
+
+**Query Parameters:**
+- `side` (optional): "left" or "right" (default: "left")
+
+**Response:**
+```json
+{
+  "data": {
+    "winners": [
+      {
+        "image_url": "https://cdn-url/image.png",
+        "prompt": "Robot holding a red skateboard",
+        "provider": "freepik",
+        "pair_id": "uuid",
+        "timestamp": "2025-10-06T12:00:00Z",
+        "vote_count": 5
+      }
+    ],
+    "count": 1,
+    "side": "left",
     "timestamp": "2025-10-06T12:00:00Z"
   }
 }
@@ -276,9 +277,10 @@ type ImageProvider interface {
 
 - ✅ DigitalOcean Spaces CDN integration (all images served from CDN)
 - ✅ Valkey vote persistence and caching
-- ✅ Real-time leaderboard with provider statistics
-- ✅ Vote tracking and analytics
+- ✅ Vote tracking and analytics with side-based statistics
+- ✅ Winners endpoint for retrieving top-voted images
 - ✅ Removed local storage (production-only deployment)
+- ✅ Session-independent score tracking
 
 ## Future Enhancements
 
@@ -286,7 +288,7 @@ type ImageProvider interface {
 - [ ] Webhook notifications for generation completion
 - [ ] Image metadata extraction and tagging
 - [ ] Performance monitoring and analytics
-- [ ] WebSocket support for real-time leaderboard updates
+- [ ] WebSocket support for real-time statistics updates
 
 ## Development
 

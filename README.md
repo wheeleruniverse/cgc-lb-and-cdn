@@ -6,12 +6,12 @@ A **Cloud Portfolio Challenge** implementation showcasing modern cloud architect
 
 This project implements a distributed AI image generation service with the following components:
 
-- **Load Balancer**: Digital Ocean Load Balancer distributing traffic across multiple VMs
-- **Backend Services**: Go-based API servers running on separate droplets
-- **Frontend Application**: Next.js web application with mobile-optimized image comparison
-- **CDN**: Digital Ocean Spaces CDN for fast global image delivery
+- **Load Balancer**: Digital Ocean Load Balancer distributing traffic across multiple full-stack droplets
+- **Full-Stack Droplets**: Each droplet runs Go API server, Next.js frontend, and Nginx reverse proxy
+- **Automated Deployment**: UserData script handles complete application setup with dedicated service user
+- **CDN**: Digital Ocean Spaces CDN for fast global image delivery and log storage
 - **Multi-Provider Intelligence**: ADK-powered orchestrator managing multiple AI image providers
-- **Managed Database**: Valkey (Redis-compatible) for caching and session management
+- **Managed Database**: Valkey (Redis-compatible, VPC-only) for caching and session management
 
 ## 📁 Project Structure
 
@@ -77,10 +77,13 @@ Explore individual AI image generation providers and their capabilities:
 - **Cost Optimization**: Prioritizes free tiers and manages API costs intelligently
 
 ### Production-Ready Architecture
-- **Load Balancing**: Distributes traffic across multiple backend instances
+- **Load Balancing**: Distributes traffic across multiple full-stack droplet instances
 - **CDN Integration**: Global content delivery via Digital Ocean Spaces
+- **Automated Deployment**: UserData script handles complete setup (apps, nginx, services, monitoring)
+- **Log Management**: Hourly compressed log uploads to Spaces for centralized monitoring
 - **Health Monitoring**: Comprehensive health checks and status endpoints
-- **Infrastructure as Code**: Complete Pulumi deployment automation
+- **Infrastructure as Code**: Complete Pulumi deployment automation with configurable scaling
+- **Security Hardening**: Services run as dedicated non-root user with VPC-isolated database
 
 ### Modern Frontend Experience
 - **Mobile-First**: Touch-optimized image comparison with swipe gestures
@@ -96,13 +99,15 @@ Explore individual AI image generation providers and their capabilities:
 
 ## 💰 Cost Estimation
 
-**Digital Ocean Monthly Costs (~$68/month):**
+**Digital Ocean Monthly Costs (~$68/month with 2 droplets):**
 - Load Balancer: $12/month
-- 2 Droplets (2vCPU/2GB): $36/month
-- Spaces Storage + CDN: $5/month
-- Valkey Database: $15/month
+- 2 Droplets (s-2vcpu-2gb): $36/month ($18 each)
+- Spaces Storage + CDN: $5/month (includes log storage)
+- Valkey Database (VPC-only): $15/month
 
-**Note**: The 2 vCPU / 2GB droplet configuration is required to handle full-stack deployment (backend Go API, frontend Next.js, nginx reverse proxy, and UserData bootstrapping). Smaller instances were insufficient during initial testing.
+**Scaling**: Add $18/month per additional droplet. Horizontal scaling is configured via `droplet_count` parameter.
+
+**Note**: The s-2vcpu-2gb droplet configuration is required to handle full-stack deployment (backend Go API, frontend Next.js, nginx reverse proxy, and UserData bootstrapping). Smaller instances were insufficient during initial testing.
 
 **AI Generation Costs:**
 - Leverages free tiers across multiple providers

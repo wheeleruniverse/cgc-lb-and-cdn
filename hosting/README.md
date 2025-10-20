@@ -6,13 +6,16 @@ This directory contains Infrastructure as Code (IaC) using Pulumi and Go to depl
 
 The infrastructure includes:
 
-- **1 Load Balancer**: Digital Ocean Load Balancer for distributing traffic
-- **2 Droplets**:
-  - Backend droplet (Go API server on port 8080)
-  - Frontend droplet (Next.js application on port 3000)
-- **Spaces Storage**: Object storage for generated images and content
+- **1 Load Balancer**: Digital Ocean Load Balancer for distributing traffic across droplets
+- **N Droplets** (configurable via `droplet_count`):
+  - Each droplet runs the full stack: Go API server (port 8080), Next.js frontend (port 3000), and Nginx reverse proxy (port 80)
+  - Applications deployed automatically via UserData script
+  - Services run as dedicated `cgc` user for security
+  - Automated log uploads to Spaces (hourly, gzip compressed)
+  - DigitalOcean metrics agent for monitoring
+- **Spaces Storage**: Object storage for generated images, content, and logs
 - **Spaces CDN**: Content Delivery Network for serving static files
-- **Valkey Database**: Managed in-memory database for caching user votes and session data
+- **Valkey Database**: Managed in-memory database (VPC-only) for caching user votes and session data
 - **VPC**: Private network for secure communication between resources
 - **Firewall**: Security rules for controlling access
 
@@ -80,14 +83,18 @@ The infrastructure includes:
 
 ### Application Deployment
 
-With the simplified architecture, applications are deployed through infrastructure automation. The droplets are configured in private subnets and accessed only through the load balancer.
+Applications are **automatically deployed** via UserData script during droplet provisioning. The UserData script handles:
 
-Consider using:
-- **DigitalOcean App Platform** for containerized applications
-- **Infrastructure-as-Code** deployment through Pulumi
-- **Container registries** for application images
+- **Service User Setup**: Creates dedicated `cgc` user for running applications
+- **Application Deployment**: Downloads and builds backend (Go) and frontend (Next.js) from GitHub
+- **Nginx Configuration**: Sets up reverse proxy routing `/api/*` to backend:8080, everything else to frontend:3000
+- **Service Management**: Configures systemd services for backend and frontend with auto-restart
+- **Log Management**: Sets up hourly cron job to upload compressed logs to Spaces
+- **Monitoring**: Installs DigitalOcean metrics agent for infrastructure monitoring
 
-### 3. Configure DNS (Optional)
+No manual deployment is required. Applications start automatically when droplets are provisioned.
+
+### DNS Configuration (Optional)
 
 If you have a custom domain:
 1. Point your domain's A record to the Load Balancer IP
@@ -111,9 +118,10 @@ If you have a custom domain:
 ### Droplets
 - **Size**: s-2vcpu-2gb (2 vCPU, 2GB RAM)
 - **Image**: Ubuntu 22.04 LTS
-- **Network**: Private VPC with public IP
+- **Network**: VPC-attached with public IP (firewall-protected)
 - **Storage**: 60GB SSD
-- **Note**: The 2 vCPU / 2GB configuration is required to handle UserData script execution while simultaneously serving backend, frontend, and nginx. Smaller instances (s-1vcpu-1gb) were insufficient during testing.
+- **Services**: Full stack deployment (backend, frontend, nginx) running as dedicated `cgc` user
+- **Note**: The 2 vCPU / 2GB configuration is required to handle concurrent execution of backend Go API, frontend Next.js build/serve, nginx reverse proxy, and UserData bootstrapping. Smaller instances (s-1vcpu-1gb) were insufficient during testing.
 
 ### DO Spaces Storage
 - **Name**: cgc-lb-and-cdn-content
@@ -129,39 +137,52 @@ If you have a custom domain:
 - **Use Case**: User vote caching, session storage, fast data access
 
 ### Security
-- **Firewall**: Restricts access to necessary ports only
-- **VPC**: Private communication between droplets
-- **Private Subnets**: Droplets only accessible via load balancer
+- **Firewall**: Restricts access to necessary ports only (HTTP/HTTPS public, API/frontend ports VPC-only, SSH from anywhere)
+- **VPC**: Private communication between droplets and Valkey database
+- **Service Isolation**: Applications run as dedicated `cgc` user (non-root)
+- **Database Security**: Valkey accessible only via VPC (no public endpoint)
+- **Network Architecture**: Droplets have public IPs but are firewall-protected, with load balancer distributing public traffic
 
 ## Monitoring and Maintenance
 
 1. **Check Service Status**:
-   Monitor through DigitalOcean dashboard and load balancer health checks
+   - Monitor through DigitalOcean dashboard and load balancer health checks
+   - DigitalOcean metrics agent installed on all droplets for infrastructure monitoring
 
 2. **View Logs**:
-   Access logs through DigitalOcean monitoring or centralized logging solution
+   - Application logs automatically uploaded to Spaces hourly with gzip compression
+   - Logs available in `cgc-lb-and-cdn-content` bucket under `/logs/` prefix
+   - Local logs on droplets managed by systemd (journalctl)
 
 3. **Load Balancer Health**:
-   Check the Digital Ocean dashboard for droplet health status.
+   - Health checks performed on `/health` endpoint every 10 seconds
+   - Droplets marked unhealthy after 8 failed checks (80 seconds)
+   - Check the Digital Ocean dashboard for real-time droplet health status
 
 ## Scaling
 
 To scale the infrastructure:
 
-1. **Horizontal Scaling**: Add more droplets to the load balancer
-2. **Vertical Scaling**: Resize existing droplets
+1. **Horizontal Scaling**:
+   - Update `droplet_count` configuration parameter
+   - Run `pulumi up` to provision additional droplets
+   - Load balancer automatically distributes traffic across all droplets
+2. **Vertical Scaling**: Resize existing droplets via DigitalOcean console or update droplet size in code
 3. **CDN**: Spaces CDN automatically scales globally
+4. **Database**: Upgrade Valkey cluster size or add nodes as needed
 
 ## Cost Estimation
 
-Monthly costs (approximate):
+Monthly costs (approximate, based on default 2 droplets):
 - Load Balancer: $12/month
 - 2 Droplets (s-2vcpu-2gb): $36/month ($18 each)
-- Spaces Storage (250GB): $5/month
+- Spaces Storage (250GB): $5/month (includes CDN bandwidth)
 - Valkey Database (db-s-1vcpu-1gb): $15/month
 - **Total**: ~$68/month
 
-**Note**: The s-2vcpu-2gb droplet size is required to handle the full-stack deployment (backend, frontend, nginx, and UserData bootstrapping). Initial testing with s-1vcpu-1gb droplets proved insufficient for concurrent workload execution.
+**Scaling Costs**: Add $18/month per additional droplet when increasing `droplet_count`.
+
+**Note**: The s-2vcpu-2gb droplet size is required to handle the full-stack deployment (backend Go API, frontend Next.js, nginx reverse proxy, and UserData bootstrapping). Initial testing with s-1vcpu-1gb droplets proved insufficient for concurrent workload execution.
 
 ## Cleanup
 
@@ -187,7 +208,9 @@ pulumi destroy
 ## Security Considerations
 
 1. **Access Tokens**: Never commit access tokens to version control
-2. **Private Subnets**: Droplets are in private subnets, accessible only via load balancer
-3. **Firewall**: Review and adjust firewall rules as needed
-4. **SSL**: Consider adding SSL certificates for production use
-5. **Updates**: Regularly update droplet software and security patches
+2. **Service Isolation**: Applications run as dedicated `cgc` user (non-root) for security
+3. **Firewall**: Droplets protected by firewall rules limiting access to necessary ports
+4. **VPC-Only Database**: Valkey cluster accessible only via VPC (no public endpoint)
+5. **SSL**: Let's Encrypt certificates automatically provisioned for HTTPS
+6. **Updates**: Regularly update droplet software and security patches
+7. **SSH Access**: SSH accessible from anywhere (0.0.0.0/0) - consider restricting to specific IPs in production
