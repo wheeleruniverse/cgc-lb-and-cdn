@@ -5,22 +5,16 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useDrag } from '@use-gesture/react'
 import { useSpring, animated } from '@react-spring/web'
 import WinnersGrid from './WinnersGrid'
-
-interface ImagePair {
-  pair_id: string
-  prompt: string
-  provider: string
-  left_url: string
-  right_url: string
-}
-
-// Generate a random session ID for anonymous user tracking
-function generateSessionId(): string {
-  // Create a unique session ID using timestamp + random values
-  const timestamp = Date.now().toString(36)
-  const randomPart = Math.random().toString(36).substring(2, 15)
-  return `sess_${timestamp}_${randomPart}`
-}
+import { config } from '../config'
+import {
+  fetchImagePair,
+  submitVote as submitVoteService,
+  fetchStatistics,
+  getVotedPairIds,
+  saveVotedPairIds,
+  getSessionId,
+  type ImagePair,
+} from '../services/dataService'
 
 export default function ImageBattle() {
   const [imagePair, setImagePair] = useState<ImagePair | null>(null)
@@ -30,45 +24,18 @@ export default function ImageBattle() {
   const [showWinnerEffect, setShowWinnerEffect] = useState<'left' | 'right' | null>(null)
   const [teamScores, setTeamScores] = useState({ left: 0, right: 0 })
   const [keyboardHighlight, setKeyboardHighlight] = useState<'left' | 'right' | null>(null)
-  const [votedPairIds, setVotedPairIds] = useState<string[]>(() => {
-    // Load voted pairs from localStorage on mount
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('votedPairIds')
-      return stored ? JSON.parse(stored) : []
-    }
-    return []
-  })
+  const [votedPairIds, setVotedPairIds] = useState<string[]>(() => getVotedPairIds())
   const [showWinnersGrid, setShowWinnersGrid] = useState<'left' | 'right' | null>(null)
+  const [sessionId] = useState<string>(() => getSessionId())
 
-  // Session ID for tracking anonymous users
-  const [sessionId] = useState<string>(() => {
-    // Load or create session ID from localStorage
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('sessionId')
-      if (stored) {
-        return stored
-      }
-      // Generate new session ID
-      const newSessionId = generateSessionId()
-      localStorage.setItem('sessionId', newSessionId)
-      return newSessionId
-    }
-    return generateSessionId()
-  })
-
-  // Fetch team scores from backend
+  // Fetch team scores (from backend or localStorage depending on mode)
   const fetchTeamScores = async () => {
     try {
-      const response = await fetch('/api/v1/statistics')
-      if (response.ok) {
-        const data = await response.json()
-        if (data.data && data.data.side_wins) {
-          setTeamScores({
-            left: data.data.side_wins.left || 0,
-            right: data.data.side_wins.right || 0,
-          })
-        }
-      }
+      const stats = await fetchStatistics()
+      setTeamScores({
+        left: stats.side_wins.left || 0,
+        right: stats.side_wins.right || 0,
+      })
     } catch (err) {
       console.error('Failed to fetch team scores:', err)
     }
@@ -87,35 +54,13 @@ export default function ImageBattle() {
     config: { tension: 300, friction: 30 }
   }))
 
-  const fetchImagePair = async () => {
+  const loadImagePair = async () => {
     try {
       setLoading(true)
       setError(null)
 
-      // Build URL with session ID and excluded pair IDs
-      let url = '/api/v1/images/pair'
-      const params = new URLSearchParams()
-
-      // Add session ID for session-based tracking
-      params.append('session_id', sessionId)
-
-      // Add excluded pair IDs (for backwards compatibility and extra filtering)
-      if (votedPairIds.length > 0) {
-        params.append('exclude', votedPairIds.join(','))
-      }
-
-      url += `?${params.toString()}`
-
-      const response = await fetch(url)
-
-      if (!response.ok) {
-        // Parse error response from backend
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to fetch image pair')
-      }
-
-      const data = await response.json()
-      setImagePair(data.data)
+      const pair = await fetchImagePair(votedPairIds)
+      setImagePair(pair)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
@@ -130,36 +75,22 @@ export default function ImageBattle() {
     setShowWinnerEffect(winner)
 
     try {
-      const response = await fetch('/api/v1/images/rate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          pair_id: imagePair.pair_id,
-          winner,
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to submit vote')
-      }
+      // Submit vote (to API or localStorage depending on mode)
+      await submitVoteService(imagePair.pair_id, winner)
 
       // Add this pair to voted pairs and save to localStorage
       const newVotedPairIds = [...votedPairIds, imagePair.pair_id]
       setVotedPairIds(newVotedPairIds)
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('votedPairIds', JSON.stringify(newVotedPairIds))
-      }
+      saveVotedPairIds(newVotedPairIds)
 
-      // Fetch updated team scores from backend
+      // Fetch updated team scores
       fetchTeamScores()
 
       // Wait for animation to complete
       setTimeout(() => {
         setShowWinnerEffect(null)
         setIsVoting(false)
-        fetchImagePair()
+        loadImagePair()
       }, 1500)
 
     } catch (err) {
@@ -234,12 +165,15 @@ export default function ImageBattle() {
   )
 
   useEffect(() => {
-    fetchImagePair()
+    loadImagePair()
     fetchTeamScores()
 
-    // Refresh team scores every 30 seconds
-    const interval = setInterval(fetchTeamScores, 30000)
-    return () => clearInterval(interval)
+    // Refresh team scores periodically (only when API is enabled)
+    // Note: enableLiveStatistics is derived from enableAPI in config
+    if (config.features.enableLiveStatistics) {
+      const interval = setInterval(fetchTeamScores, 30000)
+      return () => clearInterval(interval)
+    }
   }, [])
 
   // Keyboard controls for desktop
@@ -302,7 +236,7 @@ export default function ImageBattle() {
               <h2 className="text-2xl font-bold text-blue-200 mb-4">Getting Ready...</h2>
               <p className="text-blue-100 mb-6 leading-relaxed">{error}</p>
               <button
-                onClick={fetchImagePair}
+                onClick={loadImagePair}
                 className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-semibold"
               >
                 Check Again
@@ -317,10 +251,8 @@ export default function ImageBattle() {
                 onClick={() => {
                   // Clear voted pairs and reset
                   setVotedPairIds([])
-                  if (typeof window !== 'undefined') {
-                    localStorage.removeItem('votedPairIds')
-                  }
-                  fetchImagePair()
+                  saveVotedPairIds([])
+                  loadImagePair()
                 }}
                 className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-semibold"
               >
@@ -332,7 +264,7 @@ export default function ImageBattle() {
               <h2 className="text-2xl font-bold text-red-300 mb-4">Oops!</h2>
               <p className="text-red-200 mb-6">{error}</p>
               <button
-                onClick={fetchImagePair}
+                onClick={loadImagePair}
                 className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
               >
                 Try Again
@@ -382,6 +314,13 @@ export default function ImageBattle() {
         <div className="text-center mb-6">
           <h1 className="text-3xl font-bold text-white mb-2">AI Image Battle</h1>
           <p className="text-purple-200 text-sm">Click your favorite image!</p>
+          {config.isLiteMode && (
+            <div className="mt-3 inline-block bg-yellow-500/20 border border-yellow-500/50 rounded-lg px-4 py-2 backdrop-blur-md">
+              <p className="text-yellow-200 text-xs">
+                🪶 <strong>Lite Mode</strong> - Local voting only. Votes tracked in your browser.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Team Scores with Vertical Divider */}

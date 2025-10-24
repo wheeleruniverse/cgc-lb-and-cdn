@@ -31,9 +31,10 @@ The infrastructure includes:
 
 ### Option 1: GitHub Actions Deployment (Recommended)
 
-1. **Set up GitHub Secrets**: Follow the guide in [`docs/github-secrets-setup.md`](docs/github-secrets-setup.md)
-2. **Manual deployment**: Trigger deployment via GitHub Actions workflow_dispatch
-3. **Monitor deployment**: Check GitHub Actions for progress and outputs
+1. **Set up GitHub Secrets**: Follow the guide in [`docs/github-secrets.md`](docs/github-secrets.md)
+2. **Review Deployment Options**: See [`docs/deployment-workflows.md`](docs/deployment-workflows.md) for all workflows
+3. **Manual deployment**: Trigger deployment via GitHub Actions workflow_dispatch
+4. **Monitor deployment**: Check GitHub Actions for progress and outputs
 
 ### Option 2: Local Development
 

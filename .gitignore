@@ -21,3 +21,6 @@ frontend/.next/
 frontend/out/
 frontend/frontend-deploy.tar.gz
 frontend/node_modules/
+
+# GitHub Actions script dependencies
+.github/scripts/node_modules/
