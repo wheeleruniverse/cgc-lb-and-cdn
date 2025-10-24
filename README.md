@@ -23,7 +23,7 @@ Cost-optimized static deployment with feature flags:
 - **Feature Flags**: Demonstrates production-grade deployment practices
 - **Voting**: Local browser-only tracking (no backend)
 - **Images**: Served from DO Spaces CDN
-- **Cost**: $0/month
+- **Cost**: $5/month (DO Spaces + CDN, GitHub Pages is free)
 
 ### 🔄 Blue/Green Deployment Strategy
 Both deployments can run independently for testing:

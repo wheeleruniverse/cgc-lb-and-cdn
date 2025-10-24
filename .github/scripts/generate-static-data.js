@@ -12,8 +12,10 @@ const fs = require('fs');
 const path = require('path');
 const { parseStringPromise } = require('xml2js');
 
-const SPACES_ENDPOINT = 'cgc-lb-and-cdn-content.nyc3.digitaloceanspaces.com';
-const BUCKET_NAME = 'cgc-lb-and-cdn-content';
+// Digital Ocean Spaces configuration
+const DO_BUCKET_NAME = 'cgc-lb-and-cdn-content';
+const DO_REGION = 'nyc3';
+const DO_SPACES_ENDPOINT = `${DO_BUCKET_NAME}.${DO_REGION}.digitaloceanspaces.com`;
 const IMAGES_PREFIX = 'images/';
 
 /**
@@ -35,25 +37,54 @@ function httpsRequest(url, options = {}) {
 
 /**
  * List all objects in DO Spaces bucket with prefix
+ * Handles pagination for buckets with >1000 objects (S3 API limit)
  */
 async function listSpacesObjects(prefix = IMAGES_PREFIX) {
-  const url = `https://${SPACES_ENDPOINT}/?list-type=2&prefix=${encodeURIComponent(prefix)}`;
+  let allContents = [];
+  let continuationToken = null;
+  let pageCount = 0;
 
-  console.log(`📡 Fetching object list from: ${url}`);
+  console.log(`📡 Fetching object list from DO Spaces...`);
 
-  const response = await httpsRequest(url);
+  do {
+    pageCount++;
+    const params = new URLSearchParams({
+      'list-type': '2',
+      'prefix': prefix,
+    });
 
-  if (response.statusCode !== 200) {
-    throw new Error(`Failed to list objects: ${response.statusCode}`);
-  }
+    if (continuationToken) {
+      params.append('continuation-token', continuationToken);
+    }
 
-  // Parse XML response
-  const result = await parseStringPromise(response.body);
-  const contents = result.ListBucketResult?.Contents || [];
+    const url = `https://${DO_SPACES_ENDPOINT}/?${params.toString()}`;
 
-  console.log(`✅ Found ${contents.length} objects in bucket`);
+    console.log(`  Page ${pageCount}: Fetching...`);
 
-  return contents.map(item => ({
+    const response = await httpsRequest(url);
+
+    if (response.statusCode !== 200) {
+      throw new Error(`Failed to list objects: ${response.statusCode}`);
+    }
+
+    // Parse XML response
+    const result = await parseStringPromise(response.body);
+    const contents = result.ListBucketResult?.Contents || [];
+    const isTruncated = result.ListBucketResult?.IsTruncated?.[0] === 'true';
+
+    allContents = allContents.concat(contents);
+    console.log(`  Page ${pageCount}: Found ${contents.length} objects (total so far: ${allContents.length})`);
+
+    // Get continuation token for next page
+    continuationToken = isTruncated
+      ? result.ListBucketResult?.NextContinuationToken?.[0]
+      : null;
+
+  } while (continuationToken);
+
+  console.log(`✅ Completed fetching ${allContents.length} objects from bucket (${pageCount} pages)`);
+
+  return allContents.map(item => ({
     key: item.Key[0],
     size: parseInt(item.Size[0]),
     lastModified: item.LastModified[0],
@@ -64,7 +95,7 @@ async function listSpacesObjects(prefix = IMAGES_PREFIX) {
  * Fetch metadata for an image using HEAD request
  */
 async function fetchImageMetadata(imageKey) {
-  const url = `https://${SPACES_ENDPOINT}/${imageKey}`;
+  const url = `https://${DO_SPACES_ENDPOINT}/${imageKey}`;
 
   const response = await httpsRequest(url, { method: 'HEAD' });
 
@@ -106,7 +137,7 @@ function groupImagesByPair(objects) {
     }
 
     const pair = pairs.get(pairId);
-    pair[side] = `https://${SPACES_ENDPOINT}/${obj.key}`;
+    pair[side] = `https://${DO_SPACES_ENDPOINT}/${obj.key}`;
   }
 
   // Filter out incomplete pairs (must have both left and right)
@@ -125,7 +156,7 @@ async function enrichPairsWithMetadata(pairs) {
     const pair = pairs[i];
 
     // Extract key from URL
-    const leftKey = pair.left.replace(`https://${SPACES_ENDPOINT}/`, '');
+    const leftKey = pair.left.replace(`https://${DO_SPACES_ENDPOINT}/`, '');
 
     // Fetch metadata from left image (contains pair info)
     const metadata = await fetchImageMetadata(leftKey);

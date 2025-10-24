@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type "DESTROY" to confirm teardown'
+        description: 'Type "DELETE PRICY" to confirm infrastructure teardown'
         required: true
         type: string
 
@@ -18,7 +18,7 @@ jobs:
   teardown:
     name: Destroy Infrastructure
     runs-on: ubuntu-latest
-    if: github.event.inputs.confirm == 'DESTROY'
+    if: github.event.inputs.confirm == 'DELETE PRICY'
 
     steps:
     - name: Checkout code
@@ -171,13 +171,13 @@ jobs:
   teardown-failed:
     name: Teardown Confirmation Required
     runs-on: ubuntu-latest
-    if: github.event.inputs.confirm != 'DESTROY'
+    if: github.event.inputs.confirm != 'DELETE PRICY'
 
     steps:
     - name: Confirmation failed
       run: |
         echo "❌ Teardown cancelled - confirmation required" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "To destroy infrastructure, type exactly: **DESTROY**" >> $GITHUB_STEP_SUMMARY
-        echo "This safety measure prevents accidental deletion." >> $GITHUB_STEP_SUMMARY
+        echo "To destroy infrastructure, type exactly: **DELETE PRICY**" >> $GITHUB_STEP_SUMMARY
+        echo "This safety measure prevents accidental deletion and confusion with cheap teardown." >> $GITHUB_STEP_SUMMARY
         exit 1

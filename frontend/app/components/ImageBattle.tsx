@@ -168,7 +168,8 @@ export default function ImageBattle() {
     loadImagePair()
     fetchTeamScores()
 
-    // Refresh team scores periodically (only in full mode with live statistics)
+    // Refresh team scores periodically (only when API is enabled)
+    // Note: enableLiveStatistics is derived from enableAPI in config
     if (config.features.enableLiveStatistics) {
       const interval = setInterval(fetchTeamScores, 30000)
       return () => clearInterval(interval)

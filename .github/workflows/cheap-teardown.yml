@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type "DISABLE" to confirm GitHub Pages teardown'
+        description: 'Type "DELETE CHEAP" to confirm GitHub Pages teardown'
         required: true
         type: string
 
@@ -12,7 +12,7 @@ jobs:
   teardown:
     name: Disable GitHub Pages
     runs-on: ubuntu-latest
-    if: github.event.inputs.confirm == 'DISABLE'
+    if: github.event.inputs.confirm == 'DELETE CHEAP'
 
     steps:
     - name: Checkout code
@@ -57,13 +57,13 @@ jobs:
   teardown-failed:
     name: Teardown Confirmation Required
     runs-on: ubuntu-latest
-    if: github.event.inputs.confirm != 'DISABLE'
+    if: github.event.inputs.confirm != 'DELETE CHEAP'
 
     steps:
     - name: Confirmation failed
       run: |
         echo "❌ GitHub Pages teardown cancelled - confirmation required" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "To disable GitHub Pages, type exactly: **DISABLE**" >> $GITHUB_STEP_SUMMARY
-        echo "This safety measure prevents accidental removal." >> $GITHUB_STEP_SUMMARY
+        echo "To disable GitHub Pages, type exactly: **DELETE CHEAP**" >> $GITHUB_STEP_SUMMARY
+        echo "This safety measure prevents accidental removal and confusion with pricy teardown." >> $GITHUB_STEP_SUMMARY
         exit 1

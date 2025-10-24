@@ -57,15 +57,21 @@ function getEnvString(key: string, defaultValue: string = ''): string {
  * Load and validate application configuration
  */
 function loadConfig(): AppConfig {
-  const deploymentMode = getEnvString('NEXT_PUBLIC_DEPLOYMENT_MODE', 'full') as DeploymentMode
+  const deploymentMode = getEnvString('NEXT_PUBLIC_DEPLOYMENT_MODE', 'lite') as DeploymentMode
 
-  // Validate deployment mode
+  // Validate deployment mode - throw error instead of defaulting
   if (deploymentMode !== 'full' && deploymentMode !== 'lite') {
-    console.warn(`Invalid NEXT_PUBLIC_DEPLOYMENT_MODE: ${deploymentMode}. Defaulting to 'full'.`)
+    throw new Error(
+      `Invalid NEXT_PUBLIC_DEPLOYMENT_MODE: "${deploymentMode}". Must be "full" or "lite". ` +
+      `Defaulting to "lite" to avoid costly full deployment errors.`
+    )
   }
 
   const isLiteMode = deploymentMode === 'lite'
   const isFullMode = deploymentMode === 'full'
+
+  // Core feature flag: enableAPI determines most other features
+  const enableAPI = getEnvBoolean('NEXT_PUBLIC_ENABLE_API', isFullMode)
 
   return {
     deploymentMode,
@@ -73,12 +79,13 @@ function loadConfig(): AppConfig {
     isFullMode,
 
     features: {
-      enableAPI: getEnvBoolean('NEXT_PUBLIC_ENABLE_API', true),
-      enableVoting: getEnvBoolean('NEXT_PUBLIC_ENABLE_VOTING', true),
-      enableCrossSessionTracking: getEnvBoolean('NEXT_PUBLIC_ENABLE_CROSS_SESSION_TRACKING', true),
-      enableLiveStatistics: getEnvBoolean('NEXT_PUBLIC_ENABLE_LIVE_STATISTICS', true),
-      enableImageGeneration: getEnvBoolean('NEXT_PUBLIC_ENABLE_IMAGE_GENERATION', true),
-      useStaticData: getEnvBoolean('NEXT_PUBLIC_USE_STATIC_DATA', false),
+      enableAPI,
+      enableVoting: true, // Both modes support voting (backend vs localStorage)
+      // These features are only available when API is enabled
+      enableCrossSessionTracking: enableAPI,
+      enableLiveStatistics: enableAPI,
+      enableImageGeneration: enableAPI,
+      useStaticData: !enableAPI, // Use static data when no API
     },
 
     api: {

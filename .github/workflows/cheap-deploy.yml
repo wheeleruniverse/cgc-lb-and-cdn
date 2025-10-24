@@ -2,12 +2,6 @@ name: Deploy to GitHub Pages (Lite)
 
 on:
   workflow_dispatch:
-    inputs:
-      base_path:
-        description: 'Base path for GitHub Pages (leave empty for custom domain, use /repo-name for username.github.io/repo-name)'
-        required: false
-        default: ''
-        type: string
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
@@ -21,8 +15,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # GitHub Pages configuration
-  NEXT_PUBLIC_BASE_PATH: ${{ github.event.inputs.base_path }}
+  # GitHub Pages configuration (hard-coded for wheeleruniverse.github.io/cgc-lb-and-cdn)
+  # Custom domain routing is handled in dns-cutover.yml
+  NEXT_PUBLIC_BASE_PATH: /cgc-lb-and-cdn
 
 jobs:
   build:
@@ -50,10 +45,13 @@ jobs:
         echo "📡 Fetching real image pairs from DO Spaces..."
         node generate-static-data.js
 
-        # Count pairs found
-        PAIR_COUNT=$(node -e "const data = require('../frontend/public/static-data/image-pairs.json'); console.log(data.pairs.length);")
+    - name: Extract pair count from generated data
+      id: extract_count
+      run: |
+        PAIR_COUNT=$(jq '.pairs | length' frontend/public/static-data/image-pairs.json)
         echo "✅ Found $PAIR_COUNT image pairs from DO Spaces"
         echo "PAIR_COUNT=$PAIR_COUNT" >> $GITHUB_ENV
+        echo "count=$PAIR_COUNT" >> $GITHUB_OUTPUT
 
     - name: Install frontend dependencies
       working-directory: frontend
@@ -97,7 +95,7 @@ jobs:
         echo "### Deployment Details" >> $GITHUB_STEP_SUMMARY
         echo "- **Mode**: Lite (Static, GitHub Pages)" >> $GITHUB_STEP_SUMMARY
         echo "- **Features**: Local-only voting, real images from DO Spaces" >> $GITHUB_STEP_SUMMARY
-        echo "- **Image Pairs**: ${{ env.PAIR_COUNT }} pairs loaded from DO Spaces CDN" >> $GITHUB_STEP_SUMMARY
+        echo "- **Image Pairs**: ${{ steps.extract_count.outputs.count }} pairs loaded from DO Spaces CDN" >> $GITHUB_STEP_SUMMARY
         echo "- **Cost**: FREE ✨" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### Testing" >> $GITHUB_STEP_SUMMARY
