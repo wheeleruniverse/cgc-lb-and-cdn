@@ -2,15 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-
-interface WinnerImage {
-  image_url: string
-  prompt: string
-  provider: string
-  pair_id: string
-  timestamp: string
-  vote_count: number
-}
+import { config } from '../config'
+import { fetchWinners, type WinnerImage } from '../services/dataService'
 
 interface WinnersGridProps {
   side: 'left' | 'right'
@@ -23,18 +16,12 @@ export default function WinnersGrid({ side, onClose }: WinnersGridProps) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const fetchWinners = async () => {
+    const loadWinners = async () => {
       try {
         setLoading(true)
         setError(null)
-        const response = await fetch(`/api/v1/images/winners?side=${side}`)
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch winners')
-        }
-
-        const data = await response.json()
-        setWinners(data.data.winners || [])
+        const winnersData = await fetchWinners(side)
+        setWinners(winnersData)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error')
       } finally {
@@ -42,7 +29,7 @@ export default function WinnersGrid({ side, onClose }: WinnersGridProps) {
       }
     }
 
-    fetchWinners()
+    loadWinners()
   }, [side])
 
   const sideColor = side === 'left' ? 'blue' : 'purple'
@@ -66,7 +53,9 @@ export default function WinnersGrid({ side, onClose }: WinnersGridProps) {
               Team {side === 'left' ? 'Left' : 'Right'} Winners 🏆
             </h1>
             <p className="text-white/60 mt-2">
-              All images that won from the {side} position
+              {config.isLiteMode
+                ? `Your winning images from the ${side} position (local only)`
+                : `All images that won from the ${side} position`}
             </p>
           </motion.div>
           <button

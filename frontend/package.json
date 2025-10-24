@@ -4,7 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:full": "cp .env.full .env.local && next dev",
+    "dev:lite": "cp .env.lite .env.local && next dev",
     "build": "next build",
+    "build:full": "cp .env.full .env.local && next build",
+    "build:lite": "cp .env.lite .env.local && next build",
     "start": "next start",
     "lint": "next lint"
   },

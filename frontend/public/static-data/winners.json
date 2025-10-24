@@ -1,0 +1,6 @@
+{
+  "left": [],
+  "right": [],
+  "description": "Static winners data for lite deployment. This is populated from localStorage votes only.",
+  "note": "In lite mode, winners are tracked locally in the browser and not shared across sessions."
+}

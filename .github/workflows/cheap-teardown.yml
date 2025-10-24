@@ -1,0 +1,69 @@
+name: Teardown GitHub Pages (Lite)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "DISABLE" to confirm GitHub Pages teardown'
+        required: true
+        type: string
+
+jobs:
+  teardown:
+    name: Disable GitHub Pages
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'DISABLE'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Disable GitHub Pages
+      run: |
+        echo "## 🗑️ GitHub Pages Teardown" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### ⚠️ Manual Action Required" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "GitHub Pages cannot be fully disabled via GitHub Actions." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "To complete the teardown, you must:" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "1. Go to **Settings** > **Pages** in this repository" >> $GITHUB_STEP_SUMMARY
+        echo "2. Under **Source**, select **None**" >> $GITHUB_STEP_SUMMARY
+        echo "3. Click **Save**" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "This will:" >> $GITHUB_STEP_SUMMARY
+        echo "- Remove the GitHub Pages deployment" >> $GITHUB_STEP_SUMMARY
+        echo "- Delete the \`github-pages\` environment" >> $GITHUB_STEP_SUMMARY
+        echo "- Stop serving the site" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### DNS Cleanup" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "If you've switched DNS to GitHub Pages, remember to:" >> $GITHUB_STEP_SUMMARY
+        echo "- Run the **DNS Cutover** workflow to switch back to Digital Ocean" >> $GITHUB_STEP_SUMMARY
+        echo "- Or manually update your DNS A records to point to the DO Load Balancer IP" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Cost Impact" >> $GITHUB_STEP_SUMMARY
+        echo "- **Before**: FREE (GitHub Pages)" >> $GITHUB_STEP_SUMMARY
+        echo "- **After**: \$0 (nothing deployed)" >> $GITHUB_STEP_SUMMARY
+
+    - name: Delete GitHub Pages deployment artifact
+      continue-on-error: true
+      run: |
+        echo "Attempting to clean up deployment artifacts..." >> $GITHUB_STEP_SUMMARY
+        # Note: This doesn't actually disable Pages, just cleans up artifacts
+        # The user must manually disable Pages in repository settings
+
+  teardown-failed:
+    name: Teardown Confirmation Required
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm != 'DISABLE'
+
+    steps:
+    - name: Confirmation failed
+      run: |
+        echo "❌ GitHub Pages teardown cancelled - confirmation required" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "To disable GitHub Pages, type exactly: **DISABLE**" >> $GITHUB_STEP_SUMMARY
+        echo "This safety measure prevents accidental removal." >> $GITHUB_STEP_SUMMARY
+        exit 1

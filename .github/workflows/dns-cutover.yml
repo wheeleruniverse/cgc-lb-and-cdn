@@ -1,0 +1,230 @@
+name: DNS Cutover (Switch Deployment)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Switch DNS to which deployment?'
+        required: true
+        type: choice
+        options:
+          - 'github-pages'
+          - 'digital-ocean'
+      confirm:
+        description: 'Type "SWITCH" to confirm DNS cutover'
+        required: true
+        type: string
+
+env:
+  DIGITALOCEAN_TOKEN: ${{ secrets.DO_ACCESS_TOKEN }}
+  PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+
+jobs:
+  dns-cutover:
+    name: DNS Cutover
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'SWITCH'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install doctl
+      uses: digitalocean/action-doctl@v2
+      with:
+        token: ${{ secrets.DO_ACCESS_TOKEN }}
+
+    - name: Setup Go (for Pulumi if switching to DO)
+      if: github.event.inputs.target == 'digital-ocean'
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+        cache-dependency-path: hosting/go.sum
+
+    - name: Setup Pulumi CLI (if switching to DO)
+      if: github.event.inputs.target == 'digital-ocean'
+      uses: pulumi/actions@v4
+
+    - name: Get target IP address
+      id: get-ip
+      run: |
+        if [ "${{ github.event.inputs.target }}" == "github-pages" ]; then
+          # GitHub Pages IP addresses (as of 2024)
+          # https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site
+          echo "target_type=github-pages" >> $GITHUB_OUTPUT
+          echo "ip_addresses=185.199.108.153,185.199.109.153,185.199.110.153,185.199.111.153" >> $GITHUB_OUTPUT
+          echo "deployment_name=GitHub Pages (Lite)" >> $GITHUB_OUTPUT
+        else
+          # Get Load Balancer IP from Pulumi
+          cd hosting
+          go mod download
+          pulumi stack select dev
+          LB_IP=$(pulumi stack output loadBalancerIp 2>/dev/null || echo "")
+
+          if [ -z "$LB_IP" ]; then
+            echo "❌ Failed to get Load Balancer IP from Pulumi" >> $GITHUB_STEP_SUMMARY
+            echo "Make sure the Digital Ocean deployment is active (run pricy-deploy.yml first)" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          echo "target_type=digital-ocean" >> $GITHUB_OUTPUT
+          echo "ip_addresses=$LB_IP" >> $GITHUB_OUTPUT
+          echo "deployment_name=Digital Ocean (Full)" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Get current DNS configuration
+      run: |
+        DOMAIN="wheeleraiduel.online"
+
+        echo "## 🔄 DNS Cutover in Progress" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Current DNS Records" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        doctl compute domain records list "$DOMAIN" --format ID,Type,Name,Data --no-header >> $GITHUB_STEP_SUMMARY || true
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+    - name: Update DNS records
+      run: |
+        DOMAIN="wheeleraiduel.online"
+        TARGET_TYPE="${{ steps.get-ip.outputs.target_type }}"
+        DEPLOYMENT_NAME="${{ steps.get-ip.outputs.deployment_name }}"
+
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Updating DNS to: $DEPLOYMENT_NAME" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        # Delete existing A records for apex domain (@)
+        echo "🗑️ Removing existing apex A records..." >> $GITHUB_STEP_SUMMARY
+        APEX_A_RECORDS=$(doctl compute domain records list "$DOMAIN" --format ID,Type,Name --no-header | \
+          grep -E "^\s*[0-9]+\s+A\s+" | \
+          grep -v "www" | \
+          awk '{print $1}' || true)
+
+        if [ -n "$APEX_A_RECORDS" ]; then
+          for record_id in $APEX_A_RECORDS; do
+            echo "  Deleting A record ID: $record_id" >> $GITHUB_STEP_SUMMARY
+            doctl compute domain records delete "$DOMAIN" "$record_id" --force || true
+          done
+        fi
+
+        # Delete existing A records for www subdomain
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "🗑️ Removing existing www A records..." >> $GITHUB_STEP_SUMMARY
+        WWW_A_RECORDS=$(doctl compute domain records list "$DOMAIN" --format ID,Type,Name --no-header | \
+          grep -E "^\s*[0-9]+\s+A\s+www" | \
+          awk '{print $1}' || true)
+
+        if [ -n "$WWW_A_RECORDS" ]; then
+          for record_id in $WWW_A_RECORDS; do
+            echo "  Deleting www A record ID: $record_id" >> $GITHUB_STEP_SUMMARY
+            doctl compute domain records delete "$DOMAIN" "$record_id" --force || true
+          done
+        fi
+
+        # Create new A records
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "✅ Creating new A records..." >> $GITHUB_STEP_SUMMARY
+
+        IFS=',' read -ra IPS <<< "${{ steps.get-ip.outputs.ip_addresses }}"
+
+        if [ "$TARGET_TYPE" == "github-pages" ]; then
+          # GitHub Pages: Create 4 A records for apex (for redundancy)
+          for ip in "${IPS[@]}"; do
+            echo "  Creating apex A record: @ -> $ip" >> $GITHUB_STEP_SUMMARY
+            doctl compute domain records create "$DOMAIN" \
+              --record-type A \
+              --record-name @ \
+              --record-data "$ip" \
+              --record-ttl 3600 || true
+
+            echo "  Creating www A record: www -> $ip" >> $GITHUB_STEP_SUMMARY
+            doctl compute domain records create "$DOMAIN" \
+              --record-type A \
+              --record-name www \
+              --record-data "$ip" \
+              --record-ttl 3600 || true
+          done
+        else
+          # Digital Ocean: Single A record pointing to Load Balancer
+          LB_IP="${IPS[0]}"
+          echo "  Creating apex A record: @ -> $LB_IP" >> $GITHUB_STEP_SUMMARY
+          doctl compute domain records create "$DOMAIN" \
+            --record-type A \
+            --record-name @ \
+            --record-data "$LB_IP" \
+            --record-ttl 3600 || true
+
+          echo "  Creating www A record: www -> $LB_IP" >> $GITHUB_STEP_SUMMARY
+          doctl compute domain records create "$DOMAIN" \
+            --record-type A \
+            --record-name www \
+            --record-data "$LB_IP" \
+            --record-ttl 3600 || true
+        fi
+
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "✅ DNS records updated successfully!" >> $GITHUB_STEP_SUMMARY
+
+    - name: Verify new DNS configuration
+      run: |
+        DOMAIN="wheeleraiduel.online"
+
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### New DNS Records" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        doctl compute domain records list "$DOMAIN" --format ID,Type,Name,Data --no-header >> $GITHUB_STEP_SUMMARY || true
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+    - name: Generate cutover summary
+      run: |
+        TARGET="${{ github.event.inputs.target }}"
+        DEPLOYMENT_NAME="${{ steps.get-ip.outputs.deployment_name }}"
+
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## ✅ DNS Cutover Complete!" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Target Deployment" >> $GITHUB_STEP_SUMMARY
+        echo "- **Deployment**: $DEPLOYMENT_NAME" >> $GITHUB_STEP_SUMMARY
+
+        if [ "$TARGET" == "github-pages" ]; then
+          echo "- **Platform**: GitHub Pages (Free)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Features**: Lite mode (local voting, pre-generated images)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Monthly Cost**: \$0 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "- **Savings**: ~\$68/month" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "- **Platform**: Digital Ocean" >> $GITHUB_STEP_SUMMARY
+          echo "- **Features**: Full mode (API, live voting, AI generation)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Monthly Cost**: ~\$68" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### ⏰ DNS Propagation" >> $GITHUB_STEP_SUMMARY
+        echo "DNS changes may take up to 48 hours to propagate globally." >> $GITHUB_STEP_SUMMARY
+        echo "Most changes are visible within 1-2 hours." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Check DNS propagation: https://dnschecker.org/#A/wheeleraiduel.online" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🔍 Testing" >> $GITHUB_STEP_SUMMARY
+        echo "1. Wait 5-10 minutes for DNS to propagate to nearby servers" >> $GITHUB_STEP_SUMMARY
+        echo "2. Visit https://wheeleraiduel.online" >> $GITHUB_STEP_SUMMARY
+        echo "3. Verify the deployment mode indicator at the top of the page" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        if [ "$TARGET" == "digital-ocean" ]; then
+          echo "### 💰 Cost Consideration" >> $GITHUB_STEP_SUMMARY
+          echo "You've switched to Digital Ocean. Remember to run **pricy-teardown.yml** to save costs when not needed." >> $GITHUB_STEP_SUMMARY
+        fi
+
+  cutover-failed:
+    name: DNS Cutover Confirmation Required
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm != 'SWITCH'
+
+    steps:
+    - name: Confirmation failed
+      run: |
+        echo "❌ DNS cutover cancelled - confirmation required" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "To switch DNS, type exactly: **SWITCH**" >> $GITHUB_STEP_SUMMARY
+        echo "This safety measure prevents accidental DNS changes." >> $GITHUB_STEP_SUMMARY
+        exit 1
