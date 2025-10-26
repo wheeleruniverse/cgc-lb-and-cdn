@@ -57,7 +57,9 @@ function getEnvString(key: string, defaultValue: string = ''): string {
  * Load and validate application configuration
  */
 function loadConfig(): AppConfig {
-  const deploymentMode = getEnvString('NEXT_PUBLIC_DEPLOYMENT_MODE', 'lite') as DeploymentMode
+  // Must access NEXT_PUBLIC_* env vars directly for browser build-time replacement
+  // Using process.env[key] doesn't work in browser - Next.js only replaces direct access
+  const deploymentMode = (process.env.NEXT_PUBLIC_DEPLOYMENT_MODE || 'lite') as DeploymentMode
 
   // Validate deployment mode - throw error instead of defaulting
   if (deploymentMode !== 'full' && deploymentMode !== 'lite') {
@@ -71,7 +73,8 @@ function loadConfig(): AppConfig {
   const isFullMode = deploymentMode === 'full'
 
   // Core feature flag: enableAPI determines most other features
-  const enableAPI = getEnvBoolean('NEXT_PUBLIC_ENABLE_API', isFullMode)
+  const enableAPIEnv = process.env.NEXT_PUBLIC_ENABLE_API
+  const enableAPI = enableAPIEnv === 'true' || enableAPIEnv === '1' || (!enableAPIEnv && isFullMode)
 
   return {
     deploymentMode,
@@ -89,17 +92,16 @@ function loadConfig(): AppConfig {
     },
 
     api: {
-      baseUrl: getEnvString('NEXT_PUBLIC_API_BASE_URL', '/api/v1'),
+      baseUrl: process.env.NEXT_PUBLIC_API_BASE_URL || '/api/v1',
     },
 
     cdn: {
-      spacesUrl: getEnvString(
-        'NEXT_PUBLIC_SPACES_CDN_URL',
-        'https://cgc-lb-and-cdn-content.nyc3.cdn.digitaloceanspaces.com'
-      ),
+      spacesUrl: process.env.NEXT_PUBLIC_SPACES_CDN_URL ||
+        'https://cgc-lb-and-cdn-content.nyc3.cdn.digitaloceanspaces.com',
     },
 
-    basePath: getEnvString('NEXT_PUBLIC_BASE_PATH', ''),
+    // Must access NEXT_PUBLIC_BASE_PATH directly for browser build-time replacement
+    basePath: process.env.NEXT_PUBLIC_BASE_PATH || '',
   }
 }
 
