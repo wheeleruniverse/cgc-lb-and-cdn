@@ -95,8 +95,9 @@ async function loadStaticPairs(): Promise<ImagePair[]> {
     if (!response.ok) throw new Error('Failed to load static image pairs')
 
     const data = await response.json()
-    staticPairsCache = data.pairs || []
-    return staticPairsCache
+    const pairs = data.pairs || []
+    staticPairsCache = pairs
+    return pairs
   } catch (err) {
     console.error('[DataService] Failed to load static pairs:', err)
     return []
