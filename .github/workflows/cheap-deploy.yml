@@ -58,6 +58,29 @@ jobs:
         echo "✅ Using real images from DO Spaces CDN"
         npm run build:lite
 
+    - name: Verify output directory contents
+      run: |
+        echo "🔍 Checking frontend/out/ contents..."
+        echo "Directory structure:"
+        ls -laR frontend/out/ | head -100
+        echo ""
+        echo "Looking for static-data directory:"
+        if [ -d "frontend/out/static-data" ]; then
+          echo "✅ static-data directory exists"
+          echo "Contents:"
+          ls -la frontend/out/static-data/
+        else
+          echo "❌ static-data directory NOT FOUND"
+        fi
+        echo ""
+        echo "Looking for image-pairs.json:"
+        if [ -f "frontend/out/static-data/image-pairs.json" ]; then
+          echo "✅ image-pairs.json exists"
+          echo "File size: $(wc -c < frontend/out/static-data/image-pairs.json) bytes"
+        else
+          echo "❌ image-pairs.json NOT FOUND"
+        fi
+
     - name: Upload artifact
       uses: actions/upload-pages-artifact@v3
       with:
