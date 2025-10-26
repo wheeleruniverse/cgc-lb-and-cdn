@@ -1,4 +1,4 @@
-name: Refresh Infrastructure State
+name: Refresh Pulumi State
 
 on:
   workflow_dispatch:
