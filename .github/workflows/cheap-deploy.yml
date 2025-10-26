@@ -1,0 +1,113 @@
+name: Deploy to GitHub Pages (Lite)
+
+on:
+  workflow_dispatch:
+
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+env:
+  # GitHub Pages configuration (hard-coded for wheeleruniverse.github.io/cgc-lb-and-cdn)
+  # Custom domain routing is handled in dns-cutover.yml
+  NEXT_PUBLIC_BASE_PATH: /cgc-lb-and-cdn
+
+jobs:
+  build:
+    name: Build Lite Frontend
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+
+    - name: Install script dependencies
+      working-directory: .github/scripts
+      run: npm install
+
+    - name: Generate static data from DO Spaces
+      working-directory: .github/scripts
+      run: |
+        echo "📡 Fetching real image pairs from DO Spaces..."
+        node generate-static-data.js
+
+    - name: Extract pair count from generated data
+      id: extract_count
+      run: |
+        PAIR_COUNT=$(jq '.pairs | length' frontend/public/static-data/image-pairs.json)
+        echo "✅ Found $PAIR_COUNT image pairs from DO Spaces"
+        echo "PAIR_COUNT=$PAIR_COUNT" >> $GITHUB_ENV
+        echo "count=$PAIR_COUNT" >> $GITHUB_OUTPUT
+
+    - name: Install frontend dependencies
+      working-directory: frontend
+      run: npm ci
+
+    - name: Build frontend in lite mode
+      working-directory: frontend
+      run: |
+        echo "📦 Building frontend in LITE mode for GitHub Pages..."
+        echo "✅ Using real images from DO Spaces CDN"
+        npm run build:lite
+
+    - name: Upload artifact
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: frontend/out
+
+  deploy:
+    name: Deploy to GitHub Pages
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
+
+    - name: Export deployment info
+      if: success()
+      run: |
+        echo "## 🪶 Lite Deployment Complete!" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### GitHub Pages URL" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Deployment Details" >> $GITHUB_STEP_SUMMARY
+        echo "- **Mode**: Lite (Static, GitHub Pages)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Features**: Local-only voting, real images from DO Spaces" >> $GITHUB_STEP_SUMMARY
+        echo "- **Image Pairs**: ${{ steps.extract_count.outputs.count }} pairs loaded from DO Spaces CDN" >> $GITHUB_STEP_SUMMARY
+        echo "- **Cost**: FREE ✨" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Testing" >> $GITHUB_STEP_SUMMARY
+        echo "You can now test the lite deployment at the GitHub Pages URL above." >> $GITHUB_STEP_SUMMARY
+        echo "The domain DNS still points to Digital Ocean." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### DNS Cutover" >> $GITHUB_STEP_SUMMARY
+        echo "When ready, run the **DNS Cutover** workflow to switch DNS from DO to GitHub Pages." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### ⚠️ Important Notes" >> $GITHUB_STEP_SUMMARY
+        echo "- This deployment runs in **lite mode** with limited features" >> $GITHUB_STEP_SUMMARY
+        echo "- Votes are tracked locally in the browser only" >> $GITHUB_STEP_SUMMARY
+        echo "- Uses real images from DO Spaces (fetched at build time)" >> $GITHUB_STEP_SUMMARY
+        echo "- No AI image generation capability (shows existing images only)" >> $GITHUB_STEP_SUMMARY
+        echo "- No cross-session vote tracking" >> $GITHUB_STEP_SUMMARY

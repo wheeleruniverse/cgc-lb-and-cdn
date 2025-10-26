@@ -3,8 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "cp .env.lite .env.local && next dev",
+    "dev:full": "cp .env.full .env.local && next dev",
+    "dev:lite": "cp .env.lite .env.local && next dev",
+    "build": "cp .env.lite .env.local && next build",
+    "build:full": "cp .env.full .env.local && next build",
+    "build:lite": "cp .env.lite .env.local && next build",
     "start": "next start",
     "lint": "next lint"
   },

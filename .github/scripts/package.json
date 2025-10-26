@@ -1,0 +1,12 @@
+{
+  "name": "github-scripts",
+  "version": "1.0.0",
+  "description": "GitHub Actions scripts for cgc-lb-and-cdn",
+  "private": true,
+  "scripts": {
+    "generate-static-data": "node generate-static-data.js"
+  },
+  "dependencies": {
+    "xml2js": "^0.6.2"
+  }
+}

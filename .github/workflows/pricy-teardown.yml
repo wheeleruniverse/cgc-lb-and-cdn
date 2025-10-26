@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type "DESTROY" to confirm teardown'
+        description: 'Type "DELETE PRICY" to confirm infrastructure teardown'
         required: true
         type: string
 
@@ -18,7 +18,7 @@ jobs:
   teardown:
     name: Destroy Infrastructure
     runs-on: ubuntu-latest
-    if: github.event.inputs.confirm == 'DESTROY'
+    if: github.event.inputs.confirm == 'DELETE PRICY'
 
     steps:
     - name: Checkout code
@@ -57,6 +57,24 @@ jobs:
         # Read domain from Pulumi config (has default in Pulumi.yaml)
         DOMAIN=$(pulumi config get cgc-lb-and-cdn:domain || echo "wheeleraiduel.online")
         echo "📋 Domain: $DOMAIN" >> $GITHUB_STEP_SUMMARY
+
+        # Preserve DO Spaces bucket (contains images needed for lite deployment)
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🛡️ Preserving DO Spaces Bucket" >> $GITHUB_STEP_SUMMARY
+        echo "DO Spaces bucket and images will be preserved for lite deployment" >> $GITHUB_STEP_SUMMARY
+
+        # Remove Spaces bucket and CDN from Pulumi state (preserve actual resources)
+        if pulumi state delete "urn:pulumi:dev::cgc-lb-and-cdn::digitalocean:index/spacesBucket:SpacesBucket::cgc-lb-and-cdn-spaces" 2>/dev/null; then
+          echo "  ✅ Removed Spaces bucket from state (preserving actual bucket)" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "  ℹ️ Spaces bucket not in state (may have been manually created)" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        if pulumi state delete "urn:pulumi:dev::cgc-lb-and-cdn::digitalocean:index/cdn:Cdn::cgc-lb-and-cdn-cdn" 2>/dev/null; then
+          echo "  ✅ Removed CDN from state (preserving CDN configuration)" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "  ℹ️ CDN not in state" >> $GITHUB_STEP_SUMMARY
+        fi
 
         # Clean up auto-created DNS records (created by Let's Encrypt validation)
         echo "" >> $GITHUB_STEP_SUMMARY
@@ -112,11 +130,6 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### ⚠️ Cleanup Issues Detected" >> $GITHUB_STEP_SUMMARY
 
-          # Remove Spaces bucket from state if deletion failed
-          if pulumi state delete "urn:pulumi:dev::cgc-lb-and-cdn::digitalocean:index/spacesBucket:SpacesBucket::cgc-lb-and-cdn-spaces" 2>/dev/null; then
-            echo "  🔧 Removed Spaces bucket from Pulumi state (bucket may still exist in DO)" >> $GITHUB_STEP_SUMMARY
-          fi
-
           # Remove VPC from state if deletion failed
           if pulumi state delete "urn:pulumi:dev::cgc-lb-and-cdn::digitalocean:index/vpc:Vpc::cgc-lb-and-cdn-vpc" 2>/dev/null; then
             echo "  🔧 Removed VPC from Pulumi state (VPC cannot be deleted via API)" >> $GITHUB_STEP_SUMMARY
@@ -134,26 +147,37 @@ jobs:
 
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "✅ Infrastructure teardown complete!" >> $GITHUB_STEP_SUMMARY
-        echo "💰 Monthly cost savings: ~$39/month" >> $GITHUB_STEP_SUMMARY
+        echo "💰 Monthly cost savings: ~\$63/month" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### 📋 Manual Cleanup (if needed)" >> $GITHUB_STEP_SUMMARY
-        echo "- Delete DO Spaces bucket 'cgc-lb-and-cdn-content' if created manually" >> $GITHUB_STEP_SUMMARY
+        echo "### 🛡️ Preserved Resources" >> $GITHUB_STEP_SUMMARY
+        echo "The following resources were **preserved** for lite deployment:" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **DO Spaces bucket** 'cgc-lb-and-cdn-content' (~\$5/month)" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **All images** in /images/ directory" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **CDN configuration** for fast image delivery" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "These resources are needed for the lite deployment on GitHub Pages." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📋 Remaining Resources (Free)" >> $GITHUB_STEP_SUMMARY
         echo "- VPC remains (cannot be deleted - this is normal and free)" >> $GITHUB_STEP_SUMMARY
         echo "- DNS NS records remain (nameserver records for your domain)" >> $GITHUB_STEP_SUMMARY
-        echo "- Remove unused GitHub secrets if desired" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 💡 Total Monthly Cost After Teardown" >> $GITHUB_STEP_SUMMARY
+        echo "- DO Spaces + CDN: \$5/month (needed for lite deployment)" >> $GITHUB_STEP_SUMMARY
+        echo "- GitHub Pages: \$0/month (completely free)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Total: \$5/month** (down from \$68/month)" >> $GITHUB_STEP_SUMMARY
       env:
         PULUMI_STACK: dev
 
   teardown-failed:
     name: Teardown Confirmation Required
     runs-on: ubuntu-latest
-    if: github.event.inputs.confirm != 'DESTROY'
+    if: github.event.inputs.confirm != 'DELETE PRICY'
 
     steps:
     - name: Confirmation failed
       run: |
         echo "❌ Teardown cancelled - confirmation required" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "To destroy infrastructure, type exactly: **DESTROY**" >> $GITHUB_STEP_SUMMARY
-        echo "This safety measure prevents accidental deletion." >> $GITHUB_STEP_SUMMARY
+        echo "To destroy infrastructure, type exactly: **DELETE PRICY**" >> $GITHUB_STEP_SUMMARY
+        echo "This safety measure prevents accidental deletion and confusion with cheap teardown." >> $GITHUB_STEP_SUMMARY
         exit 1
