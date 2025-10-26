@@ -14,11 +14,6 @@ concurrency:
   group: "pages"
   cancel-in-progress: false
 
-env:
-  # GitHub Pages configuration (hard-coded for wheeleruniverse.github.io/cgc-lb-and-cdn)
-  # Custom domain routing is handled in dns-cutover.yml
-  NEXT_PUBLIC_BASE_PATH: /cgc-lb-and-cdn
-
 jobs:
   build:
     name: Build Lite Frontend
