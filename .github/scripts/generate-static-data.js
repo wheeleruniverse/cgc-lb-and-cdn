@@ -145,42 +145,48 @@ function groupImagesByPair(objects) {
 }
 
 /**
- * Fetch metadata for all image pairs
+ * Fetch metadata for all image pairs (parallel with batching for speed)
  */
 async function enrichPairsWithMetadata(pairs) {
   console.log(`\n🔍 Fetching metadata for ${pairs.length} pairs...`);
 
+  const BATCH_SIZE = 50; // Process 50 pairs concurrently
   const enrichedPairs = [];
+  let processedCount = 0;
 
-  for (let i = 0; i < pairs.length; i++) {
-    const pair = pairs[i];
+  // Process in batches for better performance
+  for (let i = 0; i < pairs.length; i += BATCH_SIZE) {
+    const batch = pairs.slice(i, i + BATCH_SIZE);
 
-    // Extract key from URL
-    const leftKey = pair.left.replace(`https://${DO_SPACES_ENDPOINT}/`, '');
+    // Process batch concurrently
+    const batchResults = await Promise.all(
+      batch.map(async (pair) => {
+        // Extract key from URL
+        const leftKey = pair.left.replace(`https://${DO_SPACES_ENDPOINT}/`, '');
 
-    // Fetch metadata from left image (contains pair info)
-    const metadata = await fetchImageMetadata(leftKey);
+        // Fetch metadata from left image (contains pair info)
+        const metadata = await fetchImageMetadata(leftKey);
 
-    if (!metadata) {
-      console.warn(`⚠️ Skipping pair ${pair.pairId} - no metadata found`);
-      continue;
-    }
+        if (!metadata) {
+          console.warn(`⚠️ Skipping pair ${pair.pairId} - no metadata found`);
+          return null;
+        }
 
-    enrichedPairs.push({
-      pair_id: metadata['pair-id'] || pair.pairId,
-      prompt: metadata.prompt || 'AI-generated image',
-      provider: metadata.provider || pair.provider,
-      left_url: pair.left,
-      right_url: pair.right,
-    });
+        return {
+          pair_id: metadata['pair-id'] || pair.pairId,
+          prompt: metadata.prompt || 'AI-generated image',
+          provider: metadata.provider || pair.provider,
+          left_url: pair.left,
+          right_url: pair.right,
+        };
+      })
+    );
 
-    // Show progress
-    if ((i + 1) % 10 === 0 || i === pairs.length - 1) {
-      console.log(`  Progress: ${i + 1}/${pairs.length} pairs processed`);
-    }
+    // Add successful results
+    enrichedPairs.push(...batchResults.filter(result => result !== null));
 
-    // Rate limiting - wait 100ms between requests
-    await new Promise(resolve => setTimeout(resolve, 100));
+    processedCount += batch.length;
+    console.log(`  Progress: ${processedCount}/${pairs.length} pairs processed (batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(pairs.length / BATCH_SIZE)})`);
   }
 
   return enrichedPairs;
@@ -223,6 +229,13 @@ async function main() {
 
     // Write to file
     const outputPath = path.join(process.cwd(), 'frontend/public/static-data/image-pairs.json');
+    const outputDir = path.dirname(outputPath);
+
+    // Create directory if it doesn't exist
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+
     fs.writeFileSync(outputPath, JSON.stringify(outputData, null, 2));
 
     console.log(`\n✅ Successfully generated static data!`);
