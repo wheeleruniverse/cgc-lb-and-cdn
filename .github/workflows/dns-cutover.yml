@@ -115,9 +115,38 @@ jobs:
           done
         fi
 
+        # Delete existing AAAA records (IPv6) for apex domain
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "🗑️ Removing existing apex AAAA records..." >> $GITHUB_STEP_SUMMARY
+        APEX_AAAA_RECORDS=$(doctl compute domain records list "${{ env.DOMAIN }}" --format ID,Type,Name --no-header | \
+          grep -E "^\s*[0-9]+\s+AAAA\s+" | \
+          grep -v "www" | \
+          awk '{print $1}' || true)
+
+        if [ -n "$APEX_AAAA_RECORDS" ]; then
+          for record_id in $APEX_AAAA_RECORDS; do
+            echo "  Deleting AAAA record ID: $record_id" >> $GITHUB_STEP_SUMMARY
+            doctl compute domain records delete "${{ env.DOMAIN }}" "$record_id" --force || true
+          done
+        fi
+
+        # Delete existing AAAA records for www subdomain
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "🗑️ Removing existing www AAAA records..." >> $GITHUB_STEP_SUMMARY
+        WWW_AAAA_RECORDS=$(doctl compute domain records list "${{ env.DOMAIN }}" --format ID,Type,Name --no-header | \
+          grep -E "^\s*[0-9]+\s+AAAA\s+www" | \
+          awk '{print $1}' || true)
+
+        if [ -n "$WWW_AAAA_RECORDS" ]; then
+          for record_id in $WWW_AAAA_RECORDS; do
+            echo "  Deleting www AAAA record ID: $record_id" >> $GITHUB_STEP_SUMMARY
+            doctl compute domain records delete "${{ env.DOMAIN }}" "$record_id" --force || true
+          done
+        fi
+
         # Create new A records
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "✅ Creating new A records..." >> $GITHUB_STEP_SUMMARY
+        echo "✅ Creating new A records (IPv4)..." >> $GITHUB_STEP_SUMMARY
 
         IFS=',' read -ra IPS <<< "${{ steps.get-ip.outputs.ip_addresses }}"
 
@@ -136,6 +165,33 @@ jobs:
               --record-type A \
               --record-name www \
               --record-data "$ip" \
+              --record-ttl 3600 || true
+          done
+
+          # GitHub Pages: Create AAAA records for IPv6 support
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Creating new AAAA records (IPv6)..." >> $GITHUB_STEP_SUMMARY
+
+          IPV6_ADDRESSES=(
+            "2606:50c0:8000::153"
+            "2606:50c0:8001::153"
+            "2606:50c0:8002::153"
+            "2606:50c0:8003::153"
+          )
+
+          for ipv6 in "${IPV6_ADDRESSES[@]}"; do
+            echo "  Creating apex AAAA record: @ -> $ipv6" >> $GITHUB_STEP_SUMMARY
+            doctl compute domain records create "${{ env.DOMAIN }}" \
+              --record-type AAAA \
+              --record-name @ \
+              --record-data "$ipv6" \
+              --record-ttl 3600 || true
+
+            echo "  Creating www AAAA record: www -> $ipv6" >> $GITHUB_STEP_SUMMARY
+            doctl compute domain records create "${{ env.DOMAIN }}" \
+              --record-type AAAA \
+              --record-name www \
+              --record-data "$ipv6" \
               --record-ttl 3600 || true
           done
         else
