@@ -42,7 +42,7 @@ jobs:
     - name: Extract pair count from generated data
       id: extract_count
       run: |
-        PAIR_COUNT=$(jq '.pairs | length' frontend/public/static-data/image-pairs.json)
+        PAIR_COUNT=$(jq 'length' frontend/public/static-data/image-pairs.json)
         echo "✅ Found $PAIR_COUNT image pairs from DO Spaces"
         echo "PAIR_COUNT=$PAIR_COUNT" >> $GITHUB_ENV
         echo "count=$PAIR_COUNT" >> $GITHUB_OUTPUT
