@@ -16,6 +16,13 @@ export interface ImagePair {
   right_url: string
 }
 
+// Optimized format from static data (just the essentials)
+interface OptimizedImagePair {
+  id: string
+  prompt: string
+  provider: string
+}
+
 export interface WinnerImage {
   image_url: string
   prompt: string
@@ -84,6 +91,23 @@ export function saveVotedPairIds(pairIds: string[]): void {
 }
 
 /**
+ * Convert optimized pair format to full format
+ * Builds URLs via template: {cdn}/images/{provider}/{id}/left.png
+ */
+function decodePair(optimized: OptimizedImagePair): ImagePair {
+  const cdn = config.cdn.spacesUrl
+  const { id, prompt, provider } = optimized
+
+  return {
+    pair_id: id,
+    prompt: prompt,
+    provider: provider,
+    left_url: `${cdn}/images/${provider}/${id}/left.png`,
+    right_url: `${cdn}/images/${provider}/${id}/right.png`,
+  }
+}
+
+/**
  * Load static image pairs from JSON file
  */
 async function loadStaticPairs(): Promise<ImagePair[]> {
@@ -95,8 +119,13 @@ async function loadStaticPairs(): Promise<ImagePair[]> {
     if (!response.ok) throw new Error('Failed to load static image pairs')
 
     const data = await response.json()
-    const pairs = data.pairs || []
+
+    // Data is just an array of {id, prompt, provider}
+    const optimizedPairs = data as OptimizedImagePair[]
+    const pairs = optimizedPairs.map(p => decodePair(p))
     staticPairsCache = pairs
+
+    console.log(`[DataService] Loaded ${pairs.length} pairs (optimized format)`)
     return pairs
   } catch (err) {
     console.error('[DataService] Failed to load static pairs:', err)

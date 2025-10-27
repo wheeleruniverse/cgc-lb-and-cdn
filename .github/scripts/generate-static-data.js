@@ -172,12 +172,13 @@ async function enrichPairsWithMetadata(pairs) {
           return null;
         }
 
+        const provider = metadata.provider || pair.provider;
+
+        // Store only essential data - URLs are built via template in frontend
         return {
-          pair_id: metadata['pair-id'] || pair.pairId,
-          prompt: metadata.prompt || 'AI-generated image',
-          provider: metadata.provider || pair.provider,
-          left_url: pair.left,
-          right_url: pair.right,
+          id: metadata['pair-id'] || pair.pairId,
+          prompt: metadata.prompt || 'unknown prompt',
+          provider,
         };
       })
     );
@@ -219,13 +220,9 @@ async function main() {
     // Shuffle pairs for variety
     const shuffledPairs = enrichedPairs.sort(() => Math.random() - 0.5);
 
-    // Create output data structure
-    const outputData = {
-      pairs: shuffledPairs,
-      description: 'Image pairs generated from Digital Ocean Spaces',
-      generatedAt: new Date().toISOString(),
-      totalPairs: shuffledPairs.length,
-    };
+    // Output data is just the array of pairs
+    // Frontend builds URLs via template: {cdn}/images/{provider}/{id}/left.png
+    const outputData = shuffledPairs;
 
     // Write to file
     const outputPath = path.join(process.cwd(), 'frontend/public/static-data/image-pairs.json');
