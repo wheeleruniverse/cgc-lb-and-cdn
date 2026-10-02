@@ -103,7 +103,7 @@ Actions → pulumi-refresh.yml → Run workflow
 
 **Inputs**:
 - `base_path` (optional): Base path for GitHub Pages
-  - Leave empty for custom domain (wheeleraiduel.online)
+  - Leave empty for custom domain (example.com)
   - Use `/repo-name` for username.github.io/repo-name
 
 **What it does**:
@@ -187,8 +187,8 @@ Actions → cheap-teardown.yml → Run workflow
 5. Provides propagation timeline
 
 **DNS Records Updated**:
-- `wheeleraiduel.online` (apex)
-- `www.wheeleraiduel.online`
+- `example.com` (apex)
+- `www.example.com`
 
 **Cost Impact**: $0 (DNS changes only)
 

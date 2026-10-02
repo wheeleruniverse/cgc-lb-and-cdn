@@ -14,7 +14,7 @@ on:
 env:
   DIGITALOCEAN_TOKEN: ${{ secrets.DO_ACCESS_TOKEN }}
   PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
-  DOMAIN: wheeleraiduel.online
+  DOMAIN: example.com
 
 jobs:
   dns-cutover:

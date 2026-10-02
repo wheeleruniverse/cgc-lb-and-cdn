@@ -5,7 +5,7 @@ description: Digital Ocean infrastructure
 config:
   cgc-lb-and-cdn:domain:
     description: Domain name for the application
-    default: "wheeleraiduel.online"
+    default: "example.com"
   cgc-lb-and-cdn:sha:
     description: Git commit SHA for deployment tracking
   cgc-lb-and-cdn:droplet_count:

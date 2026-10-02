@@ -55,7 +55,7 @@ jobs:
         pulumi config set cgc-lb-and-cdn:sha "teardown"
 
         # Read domain from Pulumi config (has default in Pulumi.yaml)
-        DOMAIN=$(pulumi config get cgc-lb-and-cdn:domain || echo "wheeleraiduel.online")
+        DOMAIN=$(pulumi config get cgc-lb-and-cdn:domain || echo "example.com")
         echo "📋 Domain: $DOMAIN" >> $GITHUB_STEP_SUMMARY
 
         # Preserve DO Spaces bucket (contains images needed for lite deployment)

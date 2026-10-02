@@ -1,5 +1,15 @@
 # Cloud Portfolio Challenge Load Balancing and CDN - AI Image Service
 
+> ## 🗄️ Archived — infrastructure decommissioned (October 2026)
+>
+> This was built for the **Pluralsight Cloud Portfolio Challenge** as a time-boxed demonstration. The live deployment was never meant to be permanent, and it has now been fully torn down.
+>
+> **Nothing here is running.** All Digital Ocean resources have been destroyed — load balancer, droplets, Valkey cluster, Spaces bucket, and CDN. The custom domain has lapsed, the GitHub Pages site is unpublished, and all deployment credentials have been revoked. This repository is archived and read-only.
+>
+> **Everything below describes the system as it ran.** The architecture, infrastructure code, and provider integrations are intact and are the point of this repo. But the URLs are dead, the cost figures are historical, and the deployment workflows will not run — their secrets are gone and the resources they target no longer exist. Treat the setup instructions as a record of how it worked, not as something to follow.
+>
+> **The generated artifacts were preserved offline before teardown:** 2,656 AI image pairs (5,310 objects, 5 GiB) across three providers, along with the 491 generation prompts that existed only as Spaces object metadata. Both were checksum-verified against the bucket as it was deleted.
+
 A **Cloud Portfolio Challenge** implementation showcasing modern cloud architecture with load balancing, CDN, and intelligent AI image generation using Google's Agent Development Kit (ADK).
 
 ## 🏗️ Architecture Overview

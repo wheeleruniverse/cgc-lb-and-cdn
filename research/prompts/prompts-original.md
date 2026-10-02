@@ -1,5 +1,9 @@
 ## 100 Unique Prompts (Gemini 2.5 Flash)
 
+> These 100 are the themed starting set. For the complete set of 491 prompts actually used
+> — recovered from Spaces object metadata before decommissioning, with per-prompt usage
+> counts — see [prompts-complete.md](prompts-complete.md).
+
 ### Animals with Jobs (10 prompts)
 1. A koala wearing a tiny firefighter's helmet, climbing a ladder to rescue a cat from a tree.
 2. An elegant giraffe working as a professional violinist in a concert hall.
